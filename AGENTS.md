@@ -9,7 +9,6 @@ Este repositório reúne servidores MCP locais para uso em automação de pesqui
 - `server_llm.py`: integração local com Ollama
 - `server_scopus.py`: indexação e busca semântica em acervo Scopus local
 - `server_docx.py`: leitura e edição de arquivos `.docx`
-- `prompt.md`: material auxiliar de desenvolvimento
 
 ## Convenções
 
@@ -17,6 +16,8 @@ Este repositório reúne servidores MCP locais para uso em automação de pesqui
 - Prefira funções auxiliares curtas e previsíveis.
 - Evite dependências novas sem necessidade operacional clara.
 - Quando uma operação alterar documentos, valide o estado antes e depois da escrita.
+- Para tabelas em `.docx`, o padrão esperado é: legenda acima no formato `Tabela N – ...`, tabela centralizada, autoajuste, borda superior e inferior na primeira linha, borda inferior na última linha, texto interno em `Times New Roman` tamanho `10` e primeira linha em negrito.
+- As tabelas 1 e 2 do documento da dissertação atual são exceções conhecidas de formatação e não devem ser corrigidas automaticamente, salvo solicitação explícita.
 
 ## Edição e Testes
 
