@@ -13,7 +13,39 @@ Coleção de servidores MCP locais para uso em fluxos de pesquisa, escrita acad�
 - `server_llm.py`: servidor MCP para geração e embeddings locais
 - `server_scopus.py`: servidor MCP para indexação e busca em CSVs do Scopus
 - `server_docx.py`: servidor MCP para leitura, comentários, citações e equações em `.docx`
-- `prompt.md`: anotações ou prompts auxiliares do projeto
+
+## Contexto do Workflow
+
+Estes MCPs nasceram de um fluxo local-first para escrita acadêmica assistida, com foco em controle humano e rastreabilidade das evidências. A ideia central é separar claramente:
+
+- busca e recuperação de fontes
+- validação manual no documento
+- inserção final de citações e referências
+
+Fluxo consolidado:
+
+```text
+DOCX -> comentários "citar"
+     -> leitura dos parágrafos marcados
+     -> busca por candidatos em Scopus local, PDFs indexados e internet
+     -> comentário com evidência e justificativa
+     -> validação manual
+     -> inserção final de citação e referência
+```
+
+Arquitetura prática:
+
+- `local-llm` apoia geração local e embeddings auxiliares via Ollama
+- `scopus-search` cobre indexação e busca semântica em CSVs exportados do Scopus
+- `docx-manager` faz leitura e edição dirigida de `.docx`, inclusive validação de referências textuais a equações
+- `pdf-indexer` entra como servidor complementar para ingestão e busca semântica em PDFs técnicos
+
+Decisões de implementação que vieram desse workflow:
+
+- priorizar ferramentas locais, com pouca dependência de serviços externos
+- manter busca semântica separada da decisão bibliográfica final
+- usar comentários no Word como ponto de validação humana
+- validar referências textuais sempre que houver manipulação de equações no `.docx`
 
 ## Instalação
 
