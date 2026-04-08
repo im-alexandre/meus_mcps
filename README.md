@@ -16,6 +16,11 @@ O conjunto está amplamente testado com Python e há indícios de bom funcioname
 - `server_scopus.py`: servidor MCP para indexação e busca em CSVs do Scopus
 - `server_docx.py`: servidor MCP para leitura, comentários, citações e equações em `.docx`
 
+- `AGENTS.md.global`: referência de instruções para o Codex operar em modo local-first com estes MCPs
+- `CLAUDE.md.global`: referência de instruções para o Claude operar em modo local-first com estes MCPs
+
+Os arquivos `*.global` são cópias dos arquivos de configuração global de cada assistente (`~/.codex/AGENTS.md` e `~/.claude/CLAUDE.md`). Eles definem quais MCPs usar, em que ordem, com exemplos de pedidos em linguagem natural para cada ferramenta, e a regra de priorizar índices locais (`autodev-codebase`, `local-llm`) antes de recorrer a buscas brutas no sistema de arquivos. Sirva-se deles como ponto de partida ao configurar o assistente em uma nova máquina.
+
 ## Contexto do Workflow
 
 Estes MCPs nasceram de um fluxo local-first para escrita acadêmica assistida, com foco em controle humano e rastreabilidade das evidências. A ideia central é separar claramente:
@@ -109,12 +114,18 @@ Adicione os servidores ao arquivo `~/.claude/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "local-llm": { "command": "python", "args": ["C:/tools/meus_mcps/server_llm.py"] },
+    "local-llm": {
+      "command": "python",
+      "args": ["C:/tools/meus_mcps/server_llm.py"]
+    },
     "scopus-search": {
       "command": "python",
       "args": ["C:/tools/meus_mcps/server_scopus.py"]
     },
-    "docx-manager": { "command": "python", "args": ["C:/tools/meus_mcps/server_docx.py"] }
+    "docx-manager": {
+      "command": "python",
+      "args": ["C:/tools/meus_mcps/server_docx.py"]
+    }
   }
 }
 ```
@@ -141,11 +152,13 @@ Alguns serviços precisam estar em execução antes de iniciar os MCPs. Rode-os 
 Necessário para `local-llm` e `scopus-search`. Expõe os modelos locais via API REST.
 
 **Bash:**
+
 ```bash
 ollama serve > /dev/null 2>&1 &
 ```
 
 **PowerShell:**
+
 ```powershell
 Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Hidden
 ```
@@ -164,11 +177,13 @@ npm run build
 Depois inicie em segundo plano:
 
 **Bash:**
+
 ```bash
 node /caminho/para/autodev-codebase/dist/index.js > /dev/null 2>&1 &
 ```
 
 **PowerShell:**
+
 ```powershell
 Start-Process -FilePath "node" -ArgumentList "C:\caminho\para\autodev-codebase\dist\index.js" -WindowStyle Hidden
 ```
