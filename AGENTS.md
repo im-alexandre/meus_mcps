@@ -24,7 +24,6 @@ Este repositório reúne servidores MCP locais para uso em automação de pesqui
 - Trate `D:\mcp` como fonte principal.
 - Antes de publicar mudanças em um servidor MCP, rode ao menos uma verificação local simples de importação ou execução.
 - No `docx-manager`, operações sobre equações devem sempre validar a consistência das referências textuais.
-- Quando o usuário pedir uma ação com o `docx-manager`, o comportamento padrão deve ser alterar e salvar in-place no mesmo `.docx`. Só gerar arquivo novo quando o usuário pedir explicitamente uma cópia, uma versão nova ou um caminho de saída diferente.
 
 ## Git
 

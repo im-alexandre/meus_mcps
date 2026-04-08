@@ -57,6 +57,13 @@ Outras escolhas que sustentam esse equilíbrio:
 
 ## Instalação
 
+Clone o repositório:
+
+```powershell
+git clone https://github.com/im-alexandre/meus_mcps.git C:\tools\meus_mcps
+cd C:\tools\meus_mcps
+```
+
 Pré-requisitos:
 
 - Python 3.11+
@@ -76,15 +83,15 @@ Adicione os servidores ao arquivo `~/.codex/config.toml`:
 ```toml
 [mcp_servers.local-llm]
 command = "python"
-args = ["D:/mcp/server_llm.py"]
+args = ["C:/tools/meus_mcps/server_llm.py"]
 
 [mcp_servers.scopus-search]
 command = "python"
-args = ["D:/mcp/server_scopus.py"]
+args = ["C:/tools/meus_mcps/server_scopus.py"]
 
 [mcp_servers.docx-manager]
 command = "python"
-args = ["D:/mcp/server_docx.py"]
+args = ["C:/tools/meus_mcps/server_docx.py"]
 ```
 
 Se quiser usar também o `pdf-indexer`, adicione:
@@ -92,7 +99,7 @@ Se quiser usar também o `pdf-indexer`, adicione:
 ```toml
 [mcp_servers.pdf-indexer]
 command = "python"
-args = ["D:/mcp/pdf-indexer-mcp/semantic_chunked_pdf_rag.py"]
+args = ["C:/tools/meus_mcps/pdf-indexer-mcp/semantic_chunked_pdf_rag.py"]
 ```
 
 ### Claude
@@ -102,12 +109,12 @@ Adicione os servidores ao arquivo `~/.claude/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "local-llm": { "command": "python", "args": ["D:/mcp/server_llm.py"] },
+    "local-llm": { "command": "python", "args": ["C:/tools/meus_mcps/server_llm.py"] },
     "scopus-search": {
       "command": "python",
-      "args": ["D:/mcp/server_scopus.py"]
+      "args": ["C:/tools/meus_mcps/server_scopus.py"]
     },
-    "docx-manager": { "command": "python", "args": ["D:/mcp/server_docx.py"] }
+    "docx-manager": { "command": "python", "args": ["C:/tools/meus_mcps/server_docx.py"] }
   }
 }
 ```
@@ -119,7 +126,7 @@ Se quiser usar também o `pdf-indexer`, acrescente:
   "mcpServers": {
     "pdf-indexer": {
       "command": "python",
-      "args": ["D:/mcp/pdf-indexer-mcp/semantic_chunked_pdf_rag.py"]
+      "args": ["C:/tools/meus_mcps/pdf-indexer-mcp/semantic_chunked_pdf_rag.py"]
     }
   }
 }
