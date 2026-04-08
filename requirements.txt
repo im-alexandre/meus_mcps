@@ -1,0 +1,5 @@
+mcp
+ollama
+chromadb
+python-docx
+lxml
