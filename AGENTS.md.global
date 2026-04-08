@@ -1,0 +1,197 @@
+# Diretrizes Globais de MCPs e Ferramentas
+
+Estas diretrizes valem como padrão para projetos de dissertação, pesquisa aplicada e automação documental neste ambiente. Quando houver conflito, o `AGENTS.md` do repositório tem precedência sobre este arquivo global.
+
+## MCPs & Ferramentas Operacionais
+
+Este projeto usa MCPs locais para leitura de PDFs, apoio bibliográfico, embeddings, edição dirigida de DOCX e exploração do repositório. A regra prática é: usar o MCP especializado primeiro, e recorrer às ferramentas gerais do workspace apenas quando não houver um MCP adequado para a tarefa.
+
+## Exploração do repositório — regra de prioridade
+
+Antes de usar `rg`, `find`, `Get-ChildItem` ou ler arquivos diretamente, consulte primeiro `autodev-codebase` (`outline_codebase` ou `search_codebase`) e `local-llm` (`embed`) para mapear a base de código.
+
+- Use `outline_codebase` como **primeiro passo** ao explorar qualquer arquivo ou módulo.
+- Use `search_codebase` para perguntas em linguagem natural sobre o código antes de recorrer a buscas textuais brutas.
+- Recorra a `rg`, `find` ou leitura direta **apenas quando** o estado real do repositório parecer diferente do que os índices mostram — por exemplo, se uma função mencionada pelo índice não existir, ou se um arquivo novo não aparecer no outline.
+- **Se houver divergência entre o índice e o estado real**, reindexe imediatamente antes de continuar: rode `outline_codebase` com força de atualização ou o comando de rebuild do `autodev-codebase`, conforme disponível.
+
+---
+
+### `autodev-codebase`
+
+Use este MCP para mapear e buscar código no repositório atual. É o ponto de partida para qualquer tarefa que envolva entender, localizar ou modificar código.
+
+- `outline_codebase`
+  Retorna estrutura do código (funções, classes, linhas) sem ler arquivos inteiros.
+  **Quando usar:** sempre que precisar entender o que existe em um módulo ou arquivo antes de editar.
+  **Exemplos de pedidos:** "quais funções existem em server_docx.py?", "me mostre a estrutura do projeto", "o que tem no módulo de embeddings?"
+
+- `search_codebase`
+  Busca semântica no código em linguagem natural.
+  **Quando usar:** quando a pergunta é sobre comportamento, não sobre nome exato de símbolo.
+  **Exemplos de pedidos:** "onde é feita a leitura de comentários do DOCX?", "como funciona a validação de equações?", "onde o índice Scopus é construído?"
+
+---
+
+### `local-llm`
+
+Use este MCP para geração local de texto e embeddings sem depender de serviços externos.
+
+- `mcp__local_llm__generate`
+  Gera texto com modelo local via Ollama.
+  **Quando usar:** rascunhos curtos, sínteses exploratórias, reformulação de trechos e apoio local à escrita.
+  **Exemplos de pedidos:** "reformula este parágrafo em linguagem mais formal", "crie um rascunho de introdução sobre X", "traduza este trecho para o inglês"
+
+- `mcp__local_llm__embed`
+  Gera embeddings locais com `nomic-embed-text`.
+  **Quando usar:** comparação semântica, protótipos de busca vetorial e tarefas auxiliares de similaridade textual.
+  **Exemplos de pedidos:** "compare semanticamente estes dois textos", "qual destes trechos é mais próximo do meu objetivo?"
+
+---
+
+### `search-scopus`
+
+Use este MCP para trabalho bibliométrico e busca semântica em exportações locais do Scopus.
+
+- `mcp__scopus_search__collection_stats`
+  Retorna estatísticas da collection Scopus.
+  **Quando usar:** conferir cobertura, volume e estado do índice antes de análises bibliográficas.
+  **Exemplos de pedidos:** "quantos artigos estão indexados?", "qual o estado da minha base Scopus?"
+
+- `mcp__scopus_search__index_csv`
+  Indexa um CSV exportado do Scopus no índice local.
+  **Quando usar:** depois de uma nova exportação bibliográfica ou atualização da base de referências.
+  **Exemplos de pedidos:** "indexe este CSV que exportei do Scopus", "adicione estes artigos à base"
+
+- `mcp__scopus_search__search`
+  Executa busca semântica no índice Scopus.
+  **Quando usar:** localizar artigos, temas, autores, lacunas de pesquisa e trabalhos relacionados.
+  **Exemplos de pedidos:** "quais artigos falam sobre risco de mercado?", "encontre referências sobre CVaR em carteiras de crédito", "há trabalhos sobre MAPE em séries temporais financeiras?"
+
+---
+
+### `pdf-indexer`
+
+Use este MCP para ingestão, indexação, estruturação e busca semântica em PDFs de artigos, livros, relatórios, dissertações e contratos.
+
+- `mcp__pdf_indexer__download_pdf`
+  Baixa um PDF a partir de uma URL.
+  **Quando usar:** quando houver link direto para PDF público e o documento precisar entrar no acervo local.
+  **Exemplos de pedidos:** "baixe e indexe este paper: [url]", "salve este artigo do arXiv localmente"
+
+- `mcp__pdf_indexer__chunk_pdf`
+  Extrai e segmenta o PDF sem indexá-lo.
+  **Quando usar:** inspecionar qualidade da extração e diagnosticar PDFs problemáticos antes da indexação.
+  **Exemplos de pedidos:** "verifique como este PDF vai ser segmentado antes de indexar"
+
+- `mcp__pdf_indexer__index_pdf`
+  Indexa o PDF no banco local.
+  **Quando usar:** ao adicionar uma nova referência ao acervo pesquisável do projeto.
+  **Exemplos de pedidos:** "indexe este paper", "adicione este relatório ao acervo"
+
+- `mcp__pdf_indexer__generate_embeddings`
+  Gera embeddings para os chunks já indexados.
+  **Quando usar:** logo após a indexação. Sem este passo, `search_research_papers` não encontra o documento.
+  **Exemplos de pedidos:** (geralmente encadeado após `index_pdf`, sem pedido explícito separado)
+
+- `mcp__pdf_indexer__list_indexed_papers`
+  Lista os documentos já indexados.
+  **Quando usar:** conferir cobertura do acervo e validar se um arquivo já entrou no índice.
+  **Exemplos de pedidos:** "quais papers tenho indexados?", "este artigo já está no meu acervo?"
+
+- `mcp__pdf_indexer__search_research_papers`
+  Faz busca semântica nos documentos indexados.
+  **Quando usar:** localizar definições, equações, trechos metodológicos e suporte bibliográfico.
+  **Exemplos de pedidos:** "o que os papers dizem sobre CVaR?", "encontre a definição de MASE nos meus papers", "há algum paper que trate de backtesting de modelos de risco?"
+
+- `mcp__pdf_indexer__get_document_structure`
+  Exibe a estrutura de seções e chunks de um documento.
+  **Quando usar:** entender a organização de textos longos antes de recuperar trechos específicos.
+  **Exemplos de pedidos:** "qual a estrutura do paper X?", "quais seções tem este relatório?"
+
+- `mcp__pdf_indexer__get_document_section`
+  Recupera uma seção, intervalo de páginas ou chunk específico.
+  **Quando usar:** leitura focalizada e extração de trechos para citação indireta.
+  **Exemplos de pedidos:** "leia a seção de metodologia do paper X", "mostre as páginas 10 a 15 deste relatório"
+
+---
+
+### `docx-manager`
+
+Use este MCP para inspeção e edição dirigida de arquivos `.docx`. Cobre leitura, comentários, citações, tabelas e equações.
+
+- `mcp__docx_manager__list_paragraphs`
+  Lista os parágrafos com índice e texto.
+  **Quando usar:** localizar trechos antes de qualquer edição.
+  **Exemplos de pedidos:** "mostre os parágrafos do documento X", "qual o índice do parágrafo que fala sobre Y?"
+
+- `mcp__docx_manager__list_comments`
+  Lista os comentários existentes no documento.
+  **Quando usar:** revisar pendências e instruções deixadas no documento.
+  **Exemplos de pedidos:** "quais comentários existem no documento?", "há instruções pendentes no arquivo?"
+
+- `mcp__docx_manager__find_citar_paragraphs`
+  Encontra parágrafos com comentário `citar`.
+  **Quando usar:** fluxo de complementação bibliográfica.
+  **Exemplos de pedidos:** "quais parágrafos precisam de citação?", "encontre os trechos marcados para citar no documento X"
+
+- `mcp__docx_manager__insert_candidate_comment`
+  Insere um comentário em um parágrafo específico.
+  **Quando usar:** registrar sugestão de fonte ou candidato de citação antes de revisão final.
+  **Exemplos de pedidos:** "adicione uma sugestão de referência no parágrafo 12", "comente o parágrafo 5 com este candidato"
+
+- `mcp__docx_manager__insert_citation`
+  Insere citação inline e adiciona a referência ao final do documento.
+  **Quando usar:** quando a referência já foi validada e deve entrar no texto.
+  **Exemplos de pedidos:** "insira a citação (SILVA, 2020) no parágrafo 15", "adicione esta referência ao documento"
+
+- `mcp__docx_manager__list_equations`
+  Lista as equações encontradas com número, parágrafo e texto linearizado.
+  **Quando usar:** auditar equações antes de renumerar ou validar referências.
+  **Exemplos de pedidos:** "quais equações existem no documento?", "mostre as equações e seus números"
+
+- `mcp__docx_manager__validate_equation_references`
+  Valida numeração de equações e referências textuais.
+  **Quando usar:** antes de entregar ou submeter o documento.
+  **Exemplos de pedidos:** "verifique se todas as equações estão referenciadas corretamente", "há equações duplicadas ou referências quebradas?"
+
+- `mcp__docx_manager__renumber_equations`
+  Renumera equações em ordem de aparição e atualiza referências textuais.
+  **Quando usar:** após inserção ou remoção de equações que desalinham a sequência.
+  **Exemplos de pedidos:** "renumere as equações do documento", "corrija a numeração das equações a partir de 1"
+
+- `mcp__docx_manager__validate_tables_format`
+  Valida legenda, alinhamento, bordas e fonte das tabelas.
+  **Quando usar:** auditoria de conformidade antes de entrega.
+  **Exemplos de pedidos:** "as tabelas estão formatadas corretamente?", "verifique a formatação das tabelas do documento X"
+
+- `mcp__docx_manager__report_tables_format`
+  Retorna relatório textual de ok/erro por tabela.
+  **Quando usar:** versão resumida da validação, útil para inspeção rápida.
+  **Exemplos de pedidos:** "me dê um resumo da formatação das tabelas"
+
+- `mcp__docx_manager__apply_table_style`
+  Aplica estilo padrão (bordas, fonte, alinhamento) em tabelas selecionadas.
+  **Quando usar:** corrigir formatação de tabelas que falharam na validação.
+  **Exemplos de pedidos:** "corrija a formatação das tabelas do documento", "aplique o estilo padrão nas tabelas 3 e 4"
+
+- `mcp__docx_manager__set_table_caption`
+  Insere ou corrige a legenda acima de uma tabela específica.
+  **Quando usar:** quando a legenda está ausente ou fora do padrão `Tabela N – ...`.
+  **Exemplos de pedidos:** "adicione a legenda 'Tabela 2 – Estatísticas descritivas' na segunda tabela"
+
+- `mcp__docx_manager__validate_tables_with_comments`
+  Valida tabelas e insere comentários nas que tiverem erro.
+  **Quando usar:** revisão interativa — os erros ficam visíveis diretamente no Word.
+  **Exemplos de pedidos:** "marque com comentários as tabelas com problema de formatação"
+
+---
+
+### Ordem de Uso Recomendada
+
+1. Use `autodev-codebase` para mapear o repositório antes de qualquer tarefa de código.
+2. Use `pdf-indexer` para ler e pesquisar PDFs que dão suporte ao texto técnico.
+3. Use `search-scopus` quando a tarefa for ampliar ou validar o repertório bibliográfico.
+4. Use `local-llm` como apoio local de síntese, reformulação e embeddings auxiliares.
+5. Use `docx-manager` para aplicar citações, comentários, tabelas e ajustes nos `.docx`.
+6. Recorra a ferramentas de shell (`rg`, `find`, leitura direta) **apenas** quando os índices mostrarem divergência com o estado real — e reindexe imediatamente após confirmar a divergência.
