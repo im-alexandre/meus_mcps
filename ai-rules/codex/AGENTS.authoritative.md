@@ -10,6 +10,10 @@ Nunca incluir linha `Co-Authored-By` em mensagens de commit.
 
 Leia `AUTHORITATIVE_RULES_ROOT/shared/handoff.md` e siga esse protocolo para artefatos de planejamento, execucao e revisao entre Codex e Claude.
 
+## Planejamento e delegacao
+
+Leia `AUTHORITATIVE_RULES_ROOT/shared/task-delegation-policy.md`.
+
 ## Atualizacao global sincronizada
 
 Quando o usuario pedir para atualizar `AGENTS.md` ou `CLAUDE.md` global:
