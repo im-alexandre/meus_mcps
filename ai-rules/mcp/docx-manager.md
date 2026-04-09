@@ -2,6 +2,8 @@
 
 Use para leitura e edicao dirigida de arquivos `.docx`.
 
+- Se o `docx-manager` nao possuir recursos para concluir a tarefa pedida, use `python-docx` no ambiente como fallback.
+- Se `python-docx` nao estiver disponivel, instale-o no ambiente global antes de prosseguir.
 - Antes de editar, localize o trecho com `list_paragraphs` ou liste comentarios existentes.
 - Use `find_citar_paragraphs` para pendencias bibliograficas.
 - Use `insert_candidate_comment` para sugestoes de citacao ainda nao validadas.

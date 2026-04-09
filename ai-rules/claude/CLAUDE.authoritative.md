@@ -41,4 +41,4 @@ Prioridade de MCPs:
 
 Antes do primeiro uso de um MCP neste task, leia o arquivo correspondente em `AUTHORITATIVE_RULES_ROOT/mcp/`.
 
-Ao manipular qualquer arquivo `.docx`, leia sempre `AUTHORITATIVE_RULES_ROOT/mcp/docx-manager.md` antes de prosseguir, mesmo que o MCP `docx-manager` ainda nao tenha sido chamado neste task.
+Ao manipular qualquer arquivo `.docx`, leia sempre `AUTHORITATIVE_RULES_ROOT/mcp/docx-manager.md` antes de prosseguir, mesmo que o MCP `docx-manager` ainda nao tenha sido chamado neste task. Se o `docx-manager` nao possuir recursos para concluir a tarefa, use `python-docx` como fallback e, se necessario, instale `python-docx` no ambiente global antes de continuar.
