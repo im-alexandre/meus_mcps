@@ -29,7 +29,12 @@ SINGLE_TABLE_REF_RE = re.compile(r'\bTabela\s+(\d+)\b', re.IGNORECASE)
 
 W14_NS = "http://schemas.microsoft.com/office/word/2010/wordml"
 W15_NS = "http://schemas.microsoft.com/office/word/2012/wordml"
+W16CID_NS = "http://schemas.microsoft.com/office/word/2016/wordml/cid"
+W16CEX_NS = "http://schemas.microsoft.com/office/word/2018/wordml/cex"
+CR_NS = "http://schemas.microsoft.com/office/comments/2020/reactions"
 RT_COMMENTS_EXTENDED = "http://schemas.microsoft.com/office/2011/relationships/commentsExtended"
+RT_COMMENTS_IDS = "http://schemas.microsoft.com/office/2016/09/relationships/commentsIds"
+RT_COMMENTS_EXTENSIBLE = "http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible"
 CT_COMMENTS_EXTENDED = "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"
 
 
@@ -60,6 +65,36 @@ def _get_comment_para_ids(doc_path: str) -> dict:
         parent = ex.get(f"{{{W15_NS}}}paraIdParent")
         result[para_id] = {"done": done, "paraIdParent": parent}
     return result
+
+
+def _get_thumbsup_para_ids(doc_part) -> set:
+    """Retorna paraIds de comentarios com reacao 👍 (reactionType='1') em commentsExtensible.xml."""
+    try:
+        ids_part = doc_part.part_related_by(RT_COMMENTS_IDS)
+    except KeyError:
+        return set()
+    ids_tree = etree.fromstring(ids_part.blob)
+    para_to_durable = {
+        el.get(f"{{{W16CID_NS}}}paraId"): el.get(f"{{{W16CID_NS}}}durableId")
+        for el in ids_tree
+        if el.get(f"{{{W16CID_NS}}}paraId") and el.get(f"{{{W16CID_NS}}}durableId")
+    }
+    durable_to_para = {v: k for k, v in para_to_durable.items()}
+
+    try:
+        ext_part = doc_part.part_related_by(RT_COMMENTS_EXTENSIBLE)
+    except KeyError:
+        return set()
+    ext_tree = etree.fromstring(ext_part.blob)
+    thumbsup = set()
+    for entry in ext_tree.findall(f"{{{W16CEX_NS}}}commentExtensible"):
+        durable_id = entry.get(f"{{{W16CEX_NS}}}durableId")
+        reactions = entry.findall(f".//{{{CR_NS}}}reaction")
+        if any(r.get("reactionType") == "1" for r in reactions):
+            para_id = durable_to_para.get(durable_id)
+            if para_id:
+                thumbsup.add(para_id)
+    return thumbsup
 
 
 def _get_paragraph_text(para) -> str:
@@ -756,6 +791,12 @@ def remove_resolved_comments(doc_path: str, output_path: str = "") -> str:
             "parent": ex.get(f"{{{w15}}}paraIdParent"),
         }
 
+    # Tratar comentarios com 👍 como resolvidos
+    thumbsup_ids = _get_thumbsup_para_ids(doc_part)
+    for pid in thumbsup_ids:
+        if pid in para_info:
+            para_info[pid]["done"] = True
+
     if not any(info["done"] for info in para_info.values()):
         return "0 comentarios resolvidos removidos."
 
@@ -847,6 +888,7 @@ def insert_candidate_comment(
     paragraph_index: int,
     candidate_text: str,
     output_path: str = "",
+    author: str = "docx-manager",
 ) -> str:
     """Insere um comentario de candidato em um paragrafo especifico do DOCX.
 
@@ -855,6 +897,7 @@ def insert_candidate_comment(
         paragraph_index: indice do paragrafo
         candidate_text: texto do comentario (ex: 'CANDIDATO: Olivares et al. (2024)\\nScore: 0.91')
         output_path: caminho do DOCX de saida (default: salva in-place)
+        author: autor do comentario (ex: 'claude', 'codex', 'docx-manager')
     """
     doc = Document(doc_path)
     if paragraph_index >= len(doc.paragraphs):
@@ -862,7 +905,7 @@ def insert_candidate_comment(
 
     para = doc.paragraphs[paragraph_index]
     anchor = _ensure_paragraph_anchor(para)
-    doc.add_comment(anchor, candidate_text, author="docx-manager")
+    doc.add_comment(anchor, candidate_text, author=author)
 
     save_path = output_path if output_path and output_path != doc_path else doc_path
     if output_path and output_path != doc_path:
@@ -879,6 +922,7 @@ def insert_citation(
     reference: str,
     source: str = "",
     output_path: str = "",
+    author: str = "docx-manager",
 ) -> str:
     """Insere citacao inline no paragrafo e adiciona referencia ao final do documento.
 
@@ -887,8 +931,9 @@ def insert_citation(
         paragraph_index: indice do paragrafo
         citation: texto da citacao inline, ex: '(OLIVARES et al., 2024)'
         reference: referencia completa para o final do documento
-        source: DOI, link ou path do documento citado (opcional, inserido como comentario)
+        source: DOI, link ou path do documento citado (opcional, incluido no comentario)
         output_path: caminho de saida (default: salva in-place)
+        author: autor do comentario (ex: 'claude', 'codex', 'docx-manager')
     """
     doc = Document(doc_path)
     if paragraph_index >= len(doc.paragraphs):
@@ -899,10 +944,11 @@ def insert_citation(
     # Adicionar citacao ao final do paragrafo
     run = para.add_run(f" {citation}")
 
-    # Comentario com fonte se fornecida
+    # Comentario unificado com citacao e fonte
     if source:
         anchor = _ensure_paragraph_anchor(para)
-        doc.add_comment(anchor, f"Fonte: {source}", author="docx-manager")
+        comment_text = f"Citação: {citation}\nFonte: {source}"
+        doc.add_comment(anchor, comment_text, author=author)
 
     # Adicionar referencia ao final do documento (sem duplicar)
     existing_refs = {_get_paragraph_text(p).strip() for p in doc.paragraphs}
