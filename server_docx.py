@@ -629,43 +629,30 @@ def reply_comment(
     output_path: str = "",
 ) -> str:
     """Responde a um comentario existente com uma mensagem em thread OOXML."""
-    from zipfile import ZipFile
-    import xml.etree.ElementTree as ET
-    from io import BytesIO
     import secrets
 
     save_path = output_path if output_path and output_path != doc_path else doc_path
 
-    w_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-    w15_ns = "http://schemas.microsoft.com/office/word/2012/wordml"
-    w14_ns = "http://schemas.microsoft.com/office/word/2010/wordml"
-    ct_ns = "http://schemas.openxmlformats.org/package/2006/content-types"
-    rel_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+    w14 = "http://schemas.microsoft.com/office/word/2010/wordml"
+    w15 = "http://schemas.microsoft.com/office/word/2012/wordml"
+    RT_EXT = "http://schemas.microsoft.com/office/2011/relationships/commentsExtended"
+    CT_EXT = "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"
 
-    with open(doc_path, "rb") as f:
-        data = BytesIO(f.read())
+    doc = Document(doc_path)
+    doc_part = doc.part
 
-    with ZipFile(data, "r") as zin:
-        parts = {}
-        for name in zin.namelist():
-            parts[name] = zin.read(name)
-
-    # --- Parse comments.xml ---
-    ET.register_namespace("w", w_ns)
-    ET.register_namespace("w14", w14_ns)
-    ET.register_namespace("w15", w15_ns)
-    comments_tree = ET.fromstring(parts["word/comments.xml"])
+    # Access comments.xml via CommentsPart (lxml element, auto-serialized on save)
+    comments_elm = doc_part._comments_part.element
 
     parent_comment = None
     max_id = 0
     parent_para_id = None
-    for c in comments_tree.findall(f"{{{w_ns}}}comment"):
-        cid = c.get(f"{{{w_ns}}}id")
+    for c in comments_elm.findall(qn("w:comment")):
+        cid = c.get(qn("w:id"))
         max_id = max(max_id, int(cid))
         if cid == comment_id:
             parent_comment = c
-            # paraId pode estar em w14 ou w namespace
-            parent_para_id = c.get(f"{{{w14_ns}}}paraId") or c.get(f"{{{w_ns}}}paraId") or c.get("paraId", "")
+            parent_para_id = c.get(qn("w14:paraId")) or c.get(f"{{{W_NS}}}paraId") or c.get("paraId", "")
 
     if parent_comment is None:
         return f"Comentario {comment_id} nao encontrado."
@@ -674,97 +661,69 @@ def reply_comment(
     new_para_id = secrets.token_hex(4).upper()
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Criar novo comment
-    new_comment = ET.SubElement(comments_tree, f"{{{w_ns}}}comment")
-    new_comment.set(f"{{{w_ns}}}id", new_id)
-    new_comment.set(f"{{{w_ns}}}author", "docx-manager")
-    new_comment.set(f"{{{w_ns}}}date", now)
-    new_comment.set(f"{{{w14_ns}}}paraId", new_para_id)
-    new_p = ET.SubElement(new_comment, f"{{{w_ns}}}p")
-    new_p.set(f"{{{w14_ns}}}paraId", secrets.token_hex(4).upper())
-    new_r = ET.SubElement(new_p, f"{{{w_ns}}}r")
-    new_t = ET.SubElement(new_r, f"{{{w_ns}}}t")
+    # Create new comment element with lxml
+    new_comment = etree.SubElement(comments_elm, qn("w:comment"))
+    new_comment.set(qn("w:id"), new_id)
+    new_comment.set(qn("w:author"), "docx-manager")
+    new_comment.set(qn("w:date"), now)
+    new_comment.set(f"{{{w14}}}paraId", new_para_id)
+    new_p = etree.SubElement(new_comment, qn("w:p"))
+    new_p.set(f"{{{w14}}}paraId", secrets.token_hex(4).upper())
+    new_r = etree.SubElement(new_p, qn("w:r"))
+    new_t = etree.SubElement(new_r, qn("w:t"))
     new_t.text = reply_text
 
-    parts["word/comments.xml"] = ET.tostring(comments_tree, xml_declaration=True, encoding="UTF-8")
+    # Access/create commentsExtended.xml via OPC
+    try:
+        ext_part = doc_part.part_related_by(RT_EXT)
+        ext_tree = etree.fromstring(ext_part.blob)
+    except KeyError:
+        ext_part = None
+        ext_tree = etree.Element(f"{{{w15}}}commentsEx")
 
-    # --- Parse/create commentsExtended.xml ---
-    if "word/commentsExtended.xml" in parts:
-        ext_tree = ET.fromstring(parts["word/commentsExtended.xml"])
-    else:
-        ext_tree = ET.Element(f"{{{w15_ns}}}commentsEx")
-
-    # Adicionar commentEx para o reply
-    new_ex = ET.SubElement(ext_tree, f"{{{w15_ns}}}commentEx")
-    new_ex.set(f"{{{w15_ns}}}paraId", new_para_id)
-    new_ex.set(f"{{{w15_ns}}}done", "0")
+    new_ex = etree.SubElement(ext_tree, f"{{{w15}}}commentEx")
+    new_ex.set(f"{{{w15}}}paraId", new_para_id)
+    new_ex.set(f"{{{w15}}}done", "0")
     if parent_para_id:
-        new_ex.set(f"{{{w15_ns}}}paraIdParent", parent_para_id)
+        new_ex.set(f"{{{w15}}}paraIdParent", parent_para_id)
 
-    parts["word/commentsExtended.xml"] = ET.tostring(ext_tree, xml_declaration=True, encoding="UTF-8")
-
-    # --- Garantir Content_Types e rels ---
-    if "[Content_Types].xml" in parts:
-        ct_tree = ET.fromstring(parts["[Content_Types].xml"])
-        has_ext = any(
-            o.get("PartName") == "/word/commentsExtended.xml"
-            for o in ct_tree.findall(f"{{{ct_ns}}}Override")
+    ext_blob = etree.tostring(ext_tree, xml_declaration=True, encoding="UTF-8", standalone=True)
+    if ext_part is None:
+        from docx.opc.part import Part
+        from docx.opc.packuri import PackURI
+        ext_part = Part(
+            PackURI("/word/commentsExtended.xml"),
+            CT_EXT,
+            ext_blob,
+            doc_part.package,
         )
-        if not has_ext:
-            override = ET.SubElement(ct_tree, f"{{{ct_ns}}}Override")
-            override.set("PartName", "/word/commentsExtended.xml")
-            override.set("ContentType", "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml")
-            parts["[Content_Types].xml"] = ET.tostring(ct_tree, xml_declaration=True, encoding="UTF-8")
+        doc_part.relate_to(ext_part, RT_EXT)
+    else:
+        ext_part._blob = ext_blob
 
-    rels_path = "word/_rels/document.xml.rels"
-    if rels_path in parts:
-        rels_tree = ET.fromstring(parts[rels_path])
-        has_rel = any(
-            r.get("Target") == "commentsExtended.xml"
-            for r in rels_tree.findall(f"{{{rel_ns}}}Relationship")
-        )
-        if not has_rel:
-            # Gerar rId unico
-            existing_ids = [r.get("Id", "") for r in rels_tree.findall(f"{{{rel_ns}}}Relationship")]
-            rid_num = max((int(r.replace("rId", "")) for r in existing_ids if r.startswith("rId") and r[3:].isdigit()), default=0) + 1
-            new_rel = ET.SubElement(rels_tree, f"{{{rel_ns}}}Relationship")
-            new_rel.set("Id", f"rId{rid_num}")
-            new_rel.set("Type", "http://schemas.microsoft.com/office/2011/relationships/commentsExtended")
-            new_rel.set("Target", "commentsExtended.xml")
-            parts[rels_path] = ET.tostring(rels_tree, xml_declaration=True, encoding="UTF-8")
-
-    # --- Adicionar commentRangeStart/End/Reference no documento ---
-    doc_tree = ET.fromstring(parts["word/document.xml"])
-    body = doc_tree.find(f"{{{w_ns}}}body")
-    # Encontrar parágrafo que contém commentRangeStart do pai
+    # Add comment range markers to document.xml
+    doc_elm = doc_part.element
+    body = doc_elm.find(qn("w:body"))
     inserted = False
-    for p in body.iter(f"{{{w_ns}}}p"):
+    for p in body.iter(qn("w:p")):
         for el in p:
-            if el.tag == f"{{{w_ns}}}commentRangeStart" and el.get(f"{{{w_ns}}}id") == comment_id:
-                # Adicionar range e ref para o novo comment ao final deste parágrafo
-                start_el = ET.SubElement(p, f"{{{w_ns}}}commentRangeStart")
-                start_el.set(f"{{{w_ns}}}id", new_id)
-                end_el = ET.SubElement(p, f"{{{w_ns}}}commentRangeEnd")
-                end_el.set(f"{{{w_ns}}}id", new_id)
-                ref_run = ET.SubElement(p, f"{{{w_ns}}}r")
-                ref_el = ET.SubElement(ref_run, f"{{{w_ns}}}commentReference")
-                ref_el.set(f"{{{w_ns}}}id", new_id)
+            if el.tag == qn("w:commentRangeStart") and el.get(qn("w:id")) == comment_id:
+                start_el = etree.SubElement(p, qn("w:commentRangeStart"))
+                start_el.set(qn("w:id"), new_id)
+                end_el = etree.SubElement(p, qn("w:commentRangeEnd"))
+                end_el.set(qn("w:id"), new_id)
+                ref_run = etree.SubElement(p, qn("w:r"))
+                ref_el = etree.SubElement(ref_run, qn("w:commentReference"))
+                ref_el.set(qn("w:id"), new_id)
                 inserted = True
                 break
         if inserted:
             break
 
-    parts["word/document.xml"] = ET.tostring(doc_tree, xml_declaration=True, encoding="UTF-8")
-
-    # --- Salvar ---
+    # Save (ZIP_DEFLATED automatic, Content_Types and rels managed by python-docx)
     if output_path and output_path != doc_path:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    out_buf = BytesIO()
-    with ZipFile(out_buf, "w") as zout:
-        for name, content in parts.items():
-            zout.writestr(name, content)
-    with open(save_path, "wb") as f:
-        f.write(out_buf.getvalue())
+    doc.save(save_path)
 
     return f"Resposta inserida no comentario {comment_id} -> {save_path}"
 
