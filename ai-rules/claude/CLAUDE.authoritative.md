@@ -40,3 +40,5 @@ Prioridade de MCPs:
 - `pdf-indexer`: instalacao e uso via repositorio oficial
 
 Antes do primeiro uso de um MCP neste task, leia o arquivo correspondente em `AUTHORITATIVE_RULES_ROOT/mcp/`.
+
+Ao manipular qualquer arquivo `.docx`, leia sempre `AUTHORITATIVE_RULES_ROOT/mcp/docx-manager.md` antes de prosseguir, mesmo que o MCP `docx-manager` ainda nao tenha sido chamado neste task.
