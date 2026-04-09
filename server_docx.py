@@ -730,98 +730,115 @@ def reply_comment(
 
 @mcp.tool()
 def remove_resolved_comments(doc_path: str, output_path: str = "") -> str:
-    """Remove silenciosamente todos os comentarios marcados como resolvidos (done=1) no Word."""
-    from zipfile import ZipFile
-    import xml.etree.ElementTree as ET
-    from io import BytesIO
-
+    """Remove comentarios resolvidos com logica de cascata em threads."""
     save_path = output_path if output_path and output_path != doc_path else doc_path
 
-    w_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-    w14_ns = "http://schemas.microsoft.com/office/word/2010/wordml"
-    w15_ns = "http://schemas.microsoft.com/office/word/2012/wordml"
+    w15 = "http://schemas.microsoft.com/office/word/2012/wordml"
+    RT_EXT = "http://schemas.microsoft.com/office/2011/relationships/commentsExtended"
 
-    with open(doc_path, "rb") as f:
-        data = BytesIO(f.read())
+    doc = Document(doc_path)
+    doc_part = doc.part
 
-    with ZipFile(data, "r") as zin:
-        parts = {}
-        for name in zin.namelist():
-            parts[name] = zin.read(name)
-
-    # Se não há commentsExtended.xml, não há como detectar resolvidos
-    if "word/commentsExtended.xml" not in parts:
+    # Access commentsExtended.xml via OPC
+    try:
+        ext_part = doc_part.part_related_by(RT_EXT)
+    except KeyError:
         return "0 comentarios resolvidos removidos (commentsExtended.xml ausente)."
 
-    ET.register_namespace("w", w_ns)
-    ET.register_namespace("w14", w14_ns)
-    ET.register_namespace("w15", w15_ns)
+    ext_tree = etree.fromstring(ext_part.blob)
 
-    # Coletar paraIds resolvidos
-    ext_tree = ET.fromstring(parts["word/commentsExtended.xml"])
-    resolved_para_ids = set()
-    for ex in ext_tree.findall(f"{{{w15_ns}}}commentEx"):
-        if ex.get(f"{{{w15_ns}}}done", "0") == "1":
-            resolved_para_ids.add(ex.get(f"{{{w15_ns}}}paraId", ""))
+    # Build para_info: {paraId: {done, parent}}
+    para_info = {}
+    for ex in ext_tree.findall(f"{{{w15}}}commentEx"):
+        pid = ex.get(f"{{{w15}}}paraId", "")
+        para_info[pid] = {
+            "done": ex.get(f"{{{w15}}}done", "0") == "1",
+            "parent": ex.get(f"{{{w15}}}paraIdParent"),
+        }
 
-    if not resolved_para_ids:
+    if not any(info["done"] for info in para_info.values()):
         return "0 comentarios resolvidos removidos."
 
-    # Mapear paraId -> comment_id via comments.xml
-    comments_tree = ET.fromstring(parts["word/comments.xml"])
-    resolved_ids = set()
-    for c in comments_tree.findall(f"{{{w_ns}}}comment"):
-        para_id = c.get(f"{{{w14_ns}}}paraId") or c.get(f"{{{w_ns}}}paraId") or c.get("paraId", "")
-        if para_id in resolved_para_ids:
-            resolved_ids.add(c.get(f"{{{w_ns}}}id"))
+    # Map paraId -> comment_id from comments.xml
+    comments_elm = doc_part._comments_part.element
+    para_to_cid = {}
+    for c in comments_elm.findall(qn("w:comment")):
+        pid = c.get(qn("w14:paraId")) or c.get(f"{{{W_NS}}}paraId") or c.get("paraId", "")
+        para_to_cid[pid] = c.get(qn("w:id"))
 
-    if not resolved_ids:
+    # Group threads: parent_paraId -> [child_paraIds]
+    threads = {}
+    children_set = set()
+    for pid, info in para_info.items():
+        if info["parent"]:
+            threads.setdefault(info["parent"], []).append(pid)
+            children_set.add(pid)
+
+    # Determine which comment IDs to remove (cascade logic)
+    ids_to_remove = set()
+
+    for parent_pid, child_pids in threads.items():
+        parent_info = para_info.get(parent_pid, {})
+        if parent_info.get("done"):
+            # Rule 1: parent resolved -> remove entire thread
+            if parent_pid in para_to_cid:
+                ids_to_remove.add(para_to_cid[parent_pid])
+            for cpid in child_pids:
+                if cpid in para_to_cid:
+                    ids_to_remove.add(para_to_cid[cpid])
+        else:
+            resolved_children = [cp for cp in child_pids if para_info.get(cp, {}).get("done")]
+            unresolved_children = [cp for cp in child_pids if not para_info.get(cp, {}).get("done")]
+            for cpid in resolved_children:
+                if cpid in para_to_cid:
+                    ids_to_remove.add(para_to_cid[cpid])
+            # Rule 3: no unresolved children left -> also remove parent
+            if not unresolved_children and parent_pid in para_to_cid:
+                ids_to_remove.add(para_to_cid[parent_pid])
+
+    # Standalone resolved (not in any thread)
+    for pid, info in para_info.items():
+        if info["done"] and pid not in children_set and pid not in threads:
+            if pid in para_to_cid:
+                ids_to_remove.add(para_to_cid[pid])
+
+    if not ids_to_remove:
         return "0 comentarios resolvidos removidos."
 
-    # Remover de comments.xml
-    for c in list(comments_tree.findall(f"{{{w_ns}}}comment")):
-        if c.get(f"{{{w_ns}}}id") in resolved_ids:
-            comments_tree.remove(c)
-    parts["word/comments.xml"] = ET.tostring(comments_tree, xml_declaration=True, encoding="UTF-8")
+    # Remove from comments.xml
+    for c in list(comments_elm.findall(qn("w:comment"))):
+        if c.get(qn("w:id")) in ids_to_remove:
+            comments_elm.remove(c)
 
-    # Remover de document.xml: commentRangeStart, commentRangeEnd, commentReference
-    doc_tree = ET.fromstring(parts["word/document.xml"])
+    # Remove from document.xml (lxml getparent — fixes O(n²) issue)
+    doc_elm = doc_part.element
     for tag in ("commentRangeStart", "commentRangeEnd"):
-        for el in list(doc_tree.iter(f"{{{w_ns}}}{tag}")):
-            if el.get(f"{{{w_ns}}}id") in resolved_ids:
-                parent = None
-                for p in doc_tree.iter():
-                    if el in list(p):
-                        parent = p
-                        break
-                if parent is not None:
-                    parent.remove(el)
-    # commentReference está dentro de um w:r
-    for ref in list(doc_tree.iter(f"{{{w_ns}}}commentReference")):
-        if ref.get(f"{{{w_ns}}}id") in resolved_ids:
-            for p in doc_tree.iter():
-                if ref in list(p):
-                    p.remove(ref)
-                    break
-    parts["word/document.xml"] = ET.tostring(doc_tree, xml_declaration=True, encoding="UTF-8")
+        for el in list(doc_elm.iter(qn(f"w:{tag}"))):
+            if el.get(qn("w:id")) in ids_to_remove:
+                el.getparent().remove(el)
 
-    # Remover de commentsExtended.xml
-    for ex in list(ext_tree.findall(f"{{{w15_ns}}}commentEx")):
-        if ex.get(f"{{{w15_ns}}}paraId", "") in resolved_para_ids:
+    # Remove commentReference (also remove orphan w:r)
+    for ref in list(doc_elm.iter(qn("w:commentReference"))):
+        if ref.get(qn("w:id")) in ids_to_remove:
+            run = ref.getparent()
+            run.remove(ref)
+            if len(run) == 0 and run.text is None:
+                run.getparent().remove(run)
+
+    # Remove from commentsExtended.xml
+    cid_to_para = {v: k for k, v in para_to_cid.items()}
+    removed_para_ids = {cid_to_para[cid] for cid in ids_to_remove if cid in cid_to_para}
+    for ex in list(ext_tree.findall(f"{{{w15}}}commentEx")):
+        if ex.get(f"{{{w15}}}paraId", "") in removed_para_ids:
             ext_tree.remove(ex)
-    parts["word/commentsExtended.xml"] = ET.tostring(ext_tree, xml_declaration=True, encoding="UTF-8")
+    ext_part._blob = etree.tostring(ext_tree, xml_declaration=True, encoding="UTF-8", standalone=True)
 
-    # Salvar
+    # Save with ZIP_DEFLATED (automatic via python-docx)
     if output_path and output_path != doc_path:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    out_buf = BytesIO()
-    with ZipFile(out_buf, "w") as zout:
-        for name, content in parts.items():
-            zout.writestr(name, content)
-    with open(save_path, "wb") as f:
-        f.write(out_buf.getvalue())
+    doc.save(save_path)
 
-    return f"{len(resolved_ids)} comentarios resolvidos removidos -> {save_path}"
+    return f"{len(ids_to_remove)} comentarios resolvidos removidos -> {save_path}"
 
 
 @mcp.tool()
