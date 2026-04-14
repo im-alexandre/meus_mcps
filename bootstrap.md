@@ -88,10 +88,11 @@ Substitua manualmente:
 
 - `{{REPO_ROOT}}` pelo diretorio raiz real do clone
 
+> **Nota**: `claude_settings.json` contem apenas hooks (`PreToolUse`). Nao ha `mcpServers` neste arquivo — todos os MCPs ficam em `mcp.json` (passo 6).
+
 Se `~/.claude/settings.json` ja existir:
 
 - preserve chaves nao relacionadas
-- faca merge de `mcpServers` por nome
 - faca merge de `hooks.PreToolUse` sem duplicar `matcher`
 
 ### 6. Configurar `~/.claude/mcp.json`
@@ -102,8 +103,8 @@ Substitua manualmente:
 
 - `{{REPO_ROOT}}`
 - `{{PYTHON_CMD}}`
-- `{{AUTODEV_CMD}}`
-- `{{AUTODEV_ARGS}}`
+
+> **Nota**: o servidor `autodev-codebase` ja usa `pwsh` com o script `scripts/autodev-codebase-current-git-mcp.ps1` — nao ha placeholders `{{AUTODEV_CMD}}` ou `{{AUTODEV_ARGS}}` no template.
 
 Se `~/.claude/mcp.json` ja existir, faca merge preservando entradas nao relacionadas.
 
