@@ -1,10 +1,9 @@
 # Politica global de planejamento e delegacao
 
-Sempre que o usuario pedir uma tarefa:
+Use delegacao quando ela reduzir o caminho critico, permitir paralelismo util ou isolar um escopo de risco claro.
 
-1. faca primeiro um plano
-2. analise a complexidade da tarefa ou das subtarefas
-3. dispare um ou mais subagentes de acordo com essa analise
-4. prefira executar o trabalho principal por meio dos subagentes
-5. nunca resolva a tarefa na conversa principal
-6. use a conversa principal para coordenacao, integracao final e comunicacao do resultado
+- Faca primeiro um plano.
+- Delegue apenas subtarefas concretas, com fronteiras e entregaveis claros.
+- Mantenha na conversa principal a coordenacao, a integracao final e a comunicacao do resultado.
+- Nao delegue trabalho que bloqueia imediatamente o proximo passo local quando for mais rapido executa-lo na conversa principal.
+- Prefira manter localmente tarefas pequenas, acopladas ou que dependam fortemente do contexto acumulado da conversa principal.

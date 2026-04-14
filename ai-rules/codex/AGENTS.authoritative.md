@@ -1,44 +1,25 @@
 # Codex Global Rules
 
-Estas regras sao a fonte autoritativa para o Codex. Quando houver conflito, `AGENTS.md` do projeto tem precedencia sobre este arquivo global.
+Estas regras sao a fonte autoritativa para o Codex. Quando houver conflito, o arquivo mais especifico do projeto prevalece.
+
+## Contexto global
+
+Mantenha o contexto de inicializacao enxuto. Carregue apenas regras globais invariantes neste arquivo e leia regras complementares somente quando o task exigir.
 
 ## Commits
 
 Nunca incluir linha `Co-Authored-By` em mensagens de commit.
 
-## Handoff
+## DOCX
 
-Leia `AUTHORITATIVE_RULES_ROOT/shared/handoff.md` e siga esse protocolo para artefatos de planejamento, execucao e revisao entre Codex e Claude.
+Qualquer tarefa que leia, revise, valide, comente, cite, formate, renumere ou edite arquivo `.docx` deve ler `AUTHORITATIVE_RULES_ROOT/mcp/docx-manager.md` antes de prosseguir, mesmo que o MCP `docx-manager` ainda nao tenha sido chamado neste task.
 
-## Planejamento e delegacao
+Se o `docx-manager` nao cobrir o caso, use `python-docx` como fallback. Se `python-docx` nao estiver disponivel, instale-o antes de continuar.
 
-Leia `AUTHORITATIVE_RULES_ROOT/shared/task-delegation-policy.md`.
+## Regras sob demanda
 
-## Atualizacao global sincronizada
-
-Quando o usuario pedir para atualizar `AGENTS.md` ou `CLAUDE.md` global:
-
-1. atualize `~/.codex/AGENTS.md`
-2. atualize `~/.claude/CLAUDE.md`
-3. atualize `AGENTS.minimal.md` e `CLAUDE.minimal.md` no repo clonado
-4. atualize os arquivos afetados em `AUTHORITATIVE_RULES_ROOT`
-5. execute `git add`, `git commit` e `git push` no repo clonado
-6. se o primeiro `git push` falhar por permissao, instrua o usuario a configurar acesso de escrita e autenticacao GitHub
-
-Leia tambem `AUTHORITATIVE_RULES_ROOT/shared/global-config-update-policy.md`.
-
-## Exploracao do repositorio
-
-Leia `AUTHORITATIVE_RULES_ROOT/shared/mcp-policy.md`.
-
-Prioridade de MCPs:
-
-- `autodev-codebase`: obrigatorio como primeiro passo em exploracao de codigo
-- `local-llm`: auxiliar local para geracao leve e embeddings
-- `scopus-search`: bibliografia semantica em CSV Scopus
-- `docx-manager`: leitura e edicao dirigida de DOCX
-- `pdf-indexer`: instalacao e uso via repositorio oficial
-
-Antes do primeiro uso de um MCP neste task, leia o arquivo correspondente em `AUTHORITATIVE_RULES_ROOT/mcp/`.
-
-Ao manipular qualquer arquivo `.docx`, leia sempre `AUTHORITATIVE_RULES_ROOT/mcp/docx-manager.md` antes de prosseguir, mesmo que o MCP `docx-manager` ainda nao tenha sido chamado neste task. Se o `docx-manager` nao possuir recursos para concluir a tarefa, use `python-docx` como fallback e, se necessario, instale `python-docx` no ambiente global antes de continuar.
+- Se houver handoff formal de planejamento, execucao ou revisao, leia `AUTHORITATIVE_RULES_ROOT/shared/handoff.md`.
+- Se o task usar delegacao ou subagentes, leia `AUTHORITATIVE_RULES_ROOT/shared/task-delegation-policy.md`.
+- Antes do primeiro uso de qualquer MCP no task, leia `AUTHORITATIVE_RULES_ROOT/shared/mcp-policy.md`.
+- Antes do primeiro uso de um MCP especifico, leia `AUTHORITATIVE_RULES_ROOT/mcp/<nome>.md`.
+- Se o usuario pedir alteracao global de `AGENTS.md` ou `CLAUDE.md`, leia `AUTHORITATIVE_RULES_ROOT/shared/global-config-update-policy.md`.

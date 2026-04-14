@@ -7,6 +7,7 @@ set -euo pipefail
 # ── Detectar OS e resolver REPO_ROOT ──────────────────────────────────────────
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT_SRC="$REPO_ROOT"   # preserva path Unix antes do cygpath (Windows)
 
 if grep -qi microsoft /proc/version 2>/dev/null; then
   OS="wsl"
@@ -15,15 +16,47 @@ elif [[ "${OS:-}" == "Windows_NT" ]]; then
   OS="windows"
   PYTHON_CMD="python"
   REPO_ROOT="$(cygpath -w "$REPO_ROOT" 2>/dev/null || echo "$REPO_ROOT")"
+  REPO_ROOT_WSL="$("$PYTHON_CMD" -c "
+import sys
+p = sys.argv[1].replace('\\\\', '/')
+drive, rest = p[0].lower(), p[2:]
+print(f'/mnt/{drive}{rest}')
+" "$REPO_ROOT")"
 else
   OS="linux"
   PYTHON_CMD="python3"
 fi
 
+REPO_ROOT_WSL="${REPO_ROOT_WSL:-}"   # vazio para wsl/linux
+
 echo "OS detectado : $OS"
 echo "REPO_ROOT    : $REPO_ROOT"
 echo "Python       : $PYTHON_CMD"
 echo ""
+
+# ── WSL isolation check ───────────────────────────────────────────────────────
+
+if [[ "$OS" == "wsl" ]]; then
+  WSL_CONF="/etc/wsl.conf"
+  if ! grep -qE "appendWindowsPath\s*=\s*false" "$WSL_CONF" 2>/dev/null; then
+    echo "AVISO: WSL esta compartilhando o PATH do Windows."
+    echo "  Isso pode fazer 'claude' resolver para claude.exe do Windows."
+    echo ""
+    echo "  Para isolar, execute:"
+    echo "    echo '[interop]' | sudo tee -a /etc/wsl.conf"
+    echo "    echo 'appendWindowsPath = false' | sudo tee -a /etc/wsl.conf"
+    echo "  Depois reinicie a distro: wsl --shutdown  (no PowerShell do Windows)"
+    echo ""
+    echo "  Instale o Claude CLI nativo no WSL:"
+    echo "    npm install -g @anthropic-ai/claude-code"
+    echo ""
+    read -rp "  Continuar o setup sem isolar? [s/N] " REPLY
+    [[ "$REPLY" =~ ^[Ss]$ ]] || exit 0
+  else
+    echo "WSL isolation: OK (appendWindowsPath=false detectado)"
+    echo ""
+  fi
+fi
 
 # ── Resolver comando do autodev-codebase por plataforma ───────────────────────
 
@@ -47,15 +80,16 @@ CODEX_DIR="${HOME}/.codex"
 mkdir -p "$CLAUDE_DIR" "$AI_BIN"
 
 resolve_template() {
-  "$PYTHON_CMD" - "$REPO_ROOT" "$PYTHON_CMD" "$AUTODEV_CMD" "$AUTODEV_ARGS" "$AI_BIN" <<'PYEOF'
+  "$PYTHON_CMD" - "$REPO_ROOT" "$PYTHON_CMD" "$AUTODEV_CMD" "$AUTODEV_ARGS" "$AI_BIN" "$REPO_ROOT_WSL" <<'PYEOF'
 import sys
 content = sys.stdin.read()
-repo_root, python_cmd, autodev_cmd, autodev_args, ai_bin = sys.argv[1:]
+repo_root, python_cmd, autodev_cmd, autodev_args, ai_bin, repo_root_wsl = sys.argv[1:]
 content = content.replace("{{REPO_ROOT}}", repo_root)
 content = content.replace("{{PYTHON_CMD}}", python_cmd)
 content = content.replace("{{AUTODEV_CMD}}", autodev_cmd)
 content = content.replace("{{AUTODEV_ARGS}}", autodev_args)
 content = content.replace("{{AI_BIN}}", ai_bin)
+content = content.replace("{{REPO_ROOT_WSL}}", repo_root_wsl)
 print(content, end="")
 PYEOF
 }
@@ -193,6 +227,42 @@ if [[ -d "$CODEX_DIR" ]]; then
   fi
 else
   echo "  ~/.codex nao encontrado — pulando (rode novamente apos instalar o Codex)."
+fi
+
+# ── Claude Desktop (GUI → MCPs via WSL + launcher) ───────────────────────────
+
+if [[ "$OS" == "windows" ]]; then
+  echo ""
+  echo "==> Configurando Claude Desktop (GUI)..."
+
+  # claude_desktop_config.json — MCPs via WSL
+  CLAUDE_DESKTOP_DIR="$(cygpath -u "${APPDATA:-}")/Claude"
+  mkdir -p "$CLAUDE_DESKTOP_DIR"
+  DESKTOP_CONFIG="$CLAUDE_DESKTOP_DIR/claude_desktop_config.json"
+  DESKTOP_MCP_RESOLVED="$(resolve_template < "$REPO_ROOT_SRC/ai-rules/claude/claude_desktop_wsl_mcp.json")"
+  echo -n "  claude_desktop_config.json: "
+  merge_json "$DESKTOP_CONFIG" "$DESKTOP_MCP_RESOLVED"
+
+  # Launcher script — abre WSL + Desktop app juntos
+  LAUNCHER_SRC="$REPO_ROOT_SRC/scripts/launch-claude-wsl.ps1"
+  LAUNCHER_DST="$(cygpath -u "${LOCALAPPDATA:-}")/Programs/launch-claude-wsl.ps1"
+  mkdir -p "$(dirname "$LAUNCHER_DST")"
+  cp "$LAUNCHER_SRC" "$LAUNCHER_DST"
+  echo "  launcher: $LAUNCHER_DST"
+  echo ""
+  echo "  Para abrir o Claude Desktop com backend WSL, use:"
+  echo "    powershell -ExecutionPolicy Bypass -File \"$(cygpath -w "$LAUNCHER_DST")\""
+  echo ""
+  echo "  Ou crie um atalho no Desktop apontando para esse comando."
+  echo ""
+  read -rp "  Registrar launcher na inicializacao do Windows? [s/N] " STARTUP_REPLY
+  if [[ "$STARTUP_REPLY" =~ ^[Ss]$ ]]; then
+    REG_CMD="powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File \"$(cygpath -w "$LAUNCHER_DST")\""
+    reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" \
+      /v "ClaudeWSLLauncher" /t REG_SZ /d "$REG_CMD" /f 2>/dev/null && \
+      echo "  startup: registrado em HKCU\\...\\Run" || \
+      echo "  AVISO: nao foi possivel registrar no startup (rode como admin se necessario)"
+  fi
 fi
 
 # ── Feito ─────────────────────────────────────────────────────────────────────

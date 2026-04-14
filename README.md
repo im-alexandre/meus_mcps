@@ -179,13 +179,14 @@ Depois inicie em segundo plano:
 **Bash:**
 
 ```bash
-node /caminho/para/autodev-codebase/dist/index.js > /dev/null 2>&1 &
+
+codebase index --serve --port 3001 --path=D:\dissertação > /dev/null 2>&1 &
 ```
 
 **PowerShell:**
 
 ```powershell
-Start-Process -FilePath "node" -ArgumentList "C:\caminho\para\autodev-codebase\dist\index.js" -WindowStyle Hidden
+Start-Process -FilePath "node" -ArgumentList "codebase index --serve --port 3001 --path=D:\dissertação " -WindowStyle Hidden
 ```
 
 Adicione o servidor ao seu cliente MCP apontando para o mesmo `dist/index.js`.

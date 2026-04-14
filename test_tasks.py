@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from docx import Document
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+from lxml import etree
 
 # Ensure server_docx is importable
 sys.path.insert(0, os.path.dirname(__file__))
@@ -76,10 +77,64 @@ def make_docx_with_equations(path):
     """Create a DOCX with equation-like paragraphs."""
     doc = Document()
     doc.add_paragraph("Introduction. See Equa\u00e7\u00e3o (1) and Equa\u00e7\u00e3o (2).")
-    doc.add_paragraph("x = a + b (1)")
+    p1 = doc.add_paragraph()
+    omath1 = etree.fromstring(
+        """
+        <m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+          <m:r><m:t>x = a + b</m:t></m:r>
+        </m:oMath>
+        """
+    )
+    p1._element.append(omath1)
+    p1.add_run(" (1)")
     doc.add_paragraph("Some text between equations.")
-    doc.add_paragraph("y = c * d (2)")
+    p2 = doc.add_paragraph()
+    omath2 = etree.fromstring(
+        """
+        <m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+          <m:r><m:t>y = c * d</m:t></m:r>
+        </m:oMath>
+        """
+    )
+    p2._element.append(omath2)
+    p2.add_run(" (2)")
     doc.add_paragraph("Conclusion referencing eq. (1).")
+    doc.save(path)
+
+
+def make_docx_with_orphan_equation_reference(path):
+    """Create a DOCX where a paragraph after an equation points to an adjacent missing number."""
+    doc = Document()
+    doc.add_paragraph("Texto introdut\u00f3rio.")
+    p1 = doc.add_paragraph()
+    omath1 = etree.fromstring(
+        """
+        <m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+          <m:r><m:t>x = a + b</m:t></m:r>
+        </m:oMath>
+        """
+    )
+    p1._element.append(omath1)
+    p1.add_run(" (1)")
+    doc.add_paragraph("Pela Equa\u00e7\u00e3o (2), obt\u00e9m-se o resultado final.")
+    doc.save(path)
+
+
+def make_docx_with_duplicate_equation_numbers(path):
+    """Create a DOCX with duplicate equation labels to ensure best-effort renumbering."""
+    doc = Document()
+    for label in (1, 1):
+        p = doc.add_paragraph()
+        omath = etree.fromstring(
+            """
+            <m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+              <m:r><m:t>x = a + b</m:t></m:r>
+            </m:oMath>
+            """
+        )
+        p._element.append(omath)
+        p.add_run(f" ({label})")
+    doc.add_paragraph("Ver Equação (1).")
     doc.save(path)
 
 
@@ -153,6 +208,12 @@ def test_replace_paragraph_text():
         doc2 = Document(out_path)
         new_text = sd._get_paragraph_text(doc2.paragraphs[0])
         report("replace_paragraph_text: text changed", new_text.strip() == "Replaced text.")
+        run0 = doc2.paragraphs[0].runs[0]
+        report(
+            "replace_paragraph_text: font normalized",
+            run0.font.name == "Times New Roman" and round(run0.font.size.pt, 1) == 12.0,
+            f"name={run0.font.name}, size={None if run0.font.size is None else run0.font.size.pt}",
+        )
 
         # Check comment was added
         comments = sd._get_comments(out_path)
@@ -321,10 +382,16 @@ def test_insert_citation():
         doc2 = Document(out_path)
         p_text = sd._get_paragraph_text(doc2.paragraphs[0])
         report("insert_citation: citation in text", "(SILVA, 2020)" in p_text, p_text)
+        para_runs = [r for r in doc2.paragraphs[0].runs if r.text.strip()]
+        para_font_ok = all(r.font.name == "Times New Roman" and round(r.font.size.pt, 1) == 12.0 for r in para_runs)
+        report("insert_citation: paragraph font normalized", para_font_ok)
 
         # Check reference added at end
         last_text = sd._get_paragraph_text(doc2.paragraphs[-1])
         report("insert_citation: reference at end", "SILVA" in last_text, last_text)
+        last_runs = [r for r in doc2.paragraphs[-1].runs if r.text.strip()]
+        ref_font_ok = all(r.font.name == "Times New Roman" and round(r.font.size.pt, 1) == 12.0 for r in last_runs)
+        report("insert_citation: reference font normalized", ref_font_ok)
 
         # Check source comment
         comments = sd._get_comments(out_path)
@@ -378,6 +445,40 @@ def test_renumber_equations():
         report("renumber_equations: ok or valid", result.get("ok", False) or "mapping" in result, str(result.get("message", "")))
     except Exception as e:
         report("renumber_equations", False, str(e))
+        traceback.print_exc()
+
+
+def test_renumber_equations_with_orphan_reference():
+    path = os.path.join(TMPDIR, "test_renum_eq_orphan.docx")
+    out_path = os.path.join(TMPDIR, "test_renum_eq_orphan_out.docx")
+    make_docx_with_orphan_equation_reference(path)
+    try:
+        result = sd.renumber_equations(path, start_number=1, output_path=out_path)
+        report("renumber_equations orphan: ok", result.get("ok", False), str(result.get("message", "")))
+        after = result.get("validation_after", {})
+        report("renumber_equations orphan: validation ok", after.get("is_valid", False))
+        doc = Document(out_path)
+        text = sd._get_paragraph_full_text(doc.paragraphs[2])
+        report("renumber_equations orphan: reference corrected", "Equação (1)" in text, text)
+    except Exception as e:
+        report("renumber_equations orphan", False, str(e))
+        traceback.print_exc()
+
+
+def test_renumber_equations_with_duplicate_numbers():
+    path = os.path.join(TMPDIR, "test_renum_eq_dupe.docx")
+    out_path = os.path.join(TMPDIR, "test_renum_eq_dupe_out.docx")
+    make_docx_with_duplicate_equation_numbers(path)
+    try:
+        result = sd.renumber_equations(path, start_number=1, output_path=out_path)
+        report("renumber_equations duplicate: ok", result.get("ok", False), str(result.get("message", "")))
+        warnings = result.get("warnings", [])
+        has_duplicate_warning = any(item.get("kind") == "duplicate-equation-number" for item in warnings)
+        report("renumber_equations duplicate: warns", has_duplicate_warning, str(warnings))
+        after = result.get("validation_after", {})
+        report("renumber_equations duplicate: renumbered sequentially", after.get("numbers_in_order") == [1, 2], str(after.get("numbers_in_order")))
+    except Exception as e:
+        report("renumber_equations duplicate", False, str(e))
         traceback.print_exc()
 
 
@@ -486,6 +587,8 @@ if __name__ == "__main__":
     test_insert_citation()
     test_output_path_optional()
     test_renumber_equations()
+    test_renumber_equations_with_orphan_reference()
+    test_renumber_equations_with_duplicate_numbers()
     test_apply_table_style()
     test_set_table_caption()
     test_validate_tables_with_comments()

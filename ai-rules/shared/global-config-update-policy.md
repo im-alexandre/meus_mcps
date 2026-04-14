@@ -6,4 +6,11 @@ Quando o usuario pedir para alterar a configuracao global:
 2. se a mudanca pedida for pequena, ajuste diretamente o arquivo global minimo correspondente
 3. se a mudanca pedida for grande, atualize `AGENTS.authoritative.md` ou `CLAUDE.authoritative.md`
 4. se a mudanca ainda ficar longa demais para o arquivo autoritativo, crie um arquivo separado em `AUTHORITATIVE_RULES_ROOT` e adicione uma referencia explicita no autoritativo correspondente
-5. nunca mova conteudo extenso para os arquivos globais minimos apenas por conveniencia
+5. atualize `~/.codex/AGENTS.md`
+6. atualize `~/.claude/CLAUDE.md`
+7. atualize `AGENTS.minimal.md` e `CLAUDE.minimal.md` no repo clonado
+8. atualize os arquivos afetados em `AUTHORITATIVE_RULES_ROOT`
+9. execute `git add`, `git commit` e `git push` no repo clonado
+10. se o primeiro `git push` falhar por permissao, instrua o usuario a configurar acesso de escrita e autenticacao GitHub antes de tentar novamente
+
+Nunca mova conteudo extenso para os arquivos globais minimos apenas por conveniencia.

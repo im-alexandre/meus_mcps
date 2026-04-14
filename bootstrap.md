@@ -37,6 +37,67 @@ Se o script nao puder ser executado:
 
 O `setup.sh` copia automaticamente o `.sh` para `~/.ai/bin/` em ambientes WSL e Linux.
 
+## Isolamento WSL (Claude CLI nativo no WSL)
+
+Por padrao, o WSL herda o PATH do Windows (`appendWindowsPath=true`). Sem isolamento,
+`claude` no terminal WSL resolve para `claude.exe` do Windows.
+
+1. Configurar `/etc/wsl.conf` na distro:
+   ```bash
+   echo '[interop]' | sudo tee -a /etc/wsl.conf
+   echo 'appendWindowsPath = false' | sudo tee -a /etc/wsl.conf
+   ```
+2. Reiniciar a distro (PowerShell do Windows):
+   ```powershell
+   wsl --shutdown
+   ```
+3. Instalar o Claude CLI no WSL:
+   ```bash
+   npm install -g @anthropic-ai/claude-code
+   ```
+4. Rodar `bash setup.sh` dentro do WSL para configurar `~/.claude/` com paths Linux.
+
+Apos isso, `which claude` no WSL deve retornar `/usr/local/bin/claude` (nao `/mnt/c/...`).
+
+## Claude Desktop: abrir com backend WSL (launcher)
+
+O `setup.sh` (executado no Windows) gera `launch-claude-wsl.ps1` e o instala em
+`%LOCALAPPDATA%\Programs\`. Esse launcher:
+
+1. Abre um terminal WSL com `claude` rodando (o CLI WSL vira o worker da sessao).
+2. Abre o Claude Desktop app.
+
+**Como usar:**
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\launch-claude-wsl.ps1"
+```
+
+**Criar atalho no Desktop (uma vez, no PowerShell):**
+```powershell
+$ws = New-Object -ComObject WScript.Shell
+$sc = $ws.CreateShortcut("$env:USERPROFILE\Desktop\Claude (WSL).lnk")
+$sc.TargetPath = "powershell.exe"
+$sc.Arguments = "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$env:LOCALAPPDATA\Programs\launch-claude-wsl.ps1`""
+$sc.IconLocation = "$env:LOCALAPPDATA\Programs\Claude\Claude.exe"
+$sc.Save()
+```
+
+**Inicializacao automatica com Windows:** o `setup.sh` oferece registrar o launcher em
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` — o WSL claude inicia junto com
+o login do Windows.
+
+## Claude Desktop: MCPs via WSL (sessao sem worker local)
+
+Quando o desktop inicia uma sessao sem um worker WSL rodando, os MCPs sao spawned
+a partir de `%APPDATA%\Claude\claude_desktop_config.json`. O `setup.sh` (Windows)
+configura esse arquivo com `wsl` como comando para cada servidor:
+
+```json
+{ "mcpServers": { "local-llm": { "command": "wsl", "args": ["python3", "/mnt/d/mcp/server_llm.py"] } } }
+```
+
+Pre-requisito: rodar `bash setup.sh` dentro do WSL primeiro (instala `~/.ai/bin/autodev-codebase-mcp.sh`).
+
 ## MCPs externos
 
 Os MCPs abaixo nao devem ser copiados de dumps locais. Eles devem ser instalados a partir dos repositorios oficiais.

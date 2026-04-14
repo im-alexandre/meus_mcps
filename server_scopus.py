@@ -28,8 +28,25 @@ def _get_collection() -> chromadb.Collection:
     return _collection
 
 
+MAX_EMBED_CHARS = 4000  # limite conservador para o modelo de embedding
+CHUNK_OVERLAP = 200
+
+
 def _embed(text: str) -> list[float]:
-    return ollama.embeddings(model="nomic-embed-text", prompt=text)["embedding"]
+    return ollama.embeddings(model="embeddinggemma", prompt=text)["embedding"]
+
+
+def _split_chunks(text: str, max_chars: int = MAX_EMBED_CHARS, overlap: int = CHUNK_OVERLAP) -> list[str]:
+    """Divide texto em chunks com sobreposição. Retorna lista com 1 item se couber."""
+    if len(text) <= max_chars:
+        return [text]
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + max_chars
+        chunks.append(text[start:end])
+        start += max_chars - overlap
+    return chunks
 
 
 # ── Tools ────────────────────────────────────────────────────────────────────
@@ -43,10 +60,18 @@ def index_csv(csv_path: str) -> str:
     if not path.exists():
         return f"Arquivo nao encontrado: {csv_path}"
 
+    csv.field_size_limit(10_000_000)
     added = 0
+    chunks_total = 0
+    ids, docs, metas, embeddings = [], [], [], []
+
+    def _flush():
+        if ids:
+            col.upsert(ids=ids, documents=docs, metadatas=metas, embeddings=embeddings)
+            ids.clear(); docs.clear(); metas.clear(); embeddings.clear()
+
     with open(path, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        ids, docs, metas, embeddings = [], [], [], []
         for i, row in enumerate(reader):
             title = row.get("Title", "").strip()
             abstract = row.get("Abstract", "").strip()
@@ -54,31 +79,37 @@ def index_csv(csv_path: str) -> str:
             if not title:
                 continue
 
-            text = f"{title}. {abstract} {keywords}".strip()
-            doc_id = row.get("DOI", "").strip() or f"row-{i}"
-
-            ids.append(doc_id)
-            docs.append(text)
-            metas.append({
+            base_id = row.get("DOI", "").strip() or f"row-{i}"
+            meta = {
                 "title": title,
                 "authors": row.get("Authors", ""),
                 "year": row.get("Year", ""),
                 "source": row.get("Source title", ""),
                 "doi": row.get("DOI", ""),
                 "keywords": keywords,
-            })
-            embeddings.append(_embed(text))
+            }
+
+            full_text = f"{title}. {abstract} {keywords}".strip()
+            chunks = _split_chunks(full_text)
+
+            for c_idx, chunk in enumerate(chunks):
+                chunk_id = base_id if len(chunks) == 1 else f"{base_id}__chunk{c_idx}"
+                ids.append(chunk_id)
+                docs.append(chunk)
+                metas.append(meta)
+                embeddings.append(_embed(chunk))
+                chunks_total += 1
+
+                if len(ids) >= 50:
+                    _flush()
+
             added += 1
 
-            # batch upsert a cada 50
-            if len(ids) >= 50:
-                col.upsert(ids=ids, documents=docs, metadatas=metas, embeddings=embeddings)
-                ids, docs, metas, embeddings = [], [], [], []
-
-        if ids:
-            col.upsert(ids=ids, documents=docs, metadatas=metas, embeddings=embeddings)
-
-    return f"Indexados {added} registros de {csv_path}"
+    _flush()
+    msg = f"Indexados {added} registros ({chunks_total} chunks) de {csv_path}"
+    if chunks_total > added:
+        msg += f" — {chunks_total - added} chunks extras por abstracts longos"
+    return msg
 
 
 @mcp.tool()

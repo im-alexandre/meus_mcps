@@ -17,6 +17,7 @@ import datetime
 mcp = FastMCP("docx-manager")
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 MATHLIKE_RE = re.compile(r"[=+\-*/≤≥≠∀ΣΦϕΘρΔεηαβγμ∣\[\]{}()]|max|min|VaR|CVaR|MAE|MAPE|RMSE|MASE")
 EQUATION_END_RE = re.compile(r"\((\d+)\)\s*$")
 EQUATION_LABEL_RE = re.compile(r"^\s*\((\d+)\)\s*$")
@@ -65,6 +66,34 @@ def _get_comment_para_ids(doc_path: str) -> dict:
         parent = ex.get(f"{{{W15_NS}}}paraIdParent")
         result[para_id] = {"done": done, "paraIdParent": parent}
     return result
+
+
+def _get_comment_situations(doc_path: str) -> dict:
+    """Retorna {comment_id: resolved} mapeando ID visivel do comentario ao status resolvido."""
+    doc = Document(doc_path)
+    doc_part = doc.part
+
+    # Build paraId -> done from commentsExtended.xml
+    try:
+        ext_part = doc_part.part_related_by(RT_COMMENTS_EXTENDED)
+    except KeyError:
+        return {}
+    tree = etree.fromstring(ext_part.blob)
+    para_done = {}
+    for ex in tree.findall(f"{{{W15_NS}}}commentEx"):
+        pid = ex.get(f"{{{W15_NS}}}paraId", "")
+        para_done[pid] = ex.get(f"{{{W15_NS}}}done", "0") == "1"
+
+    # Build paraId -> comment_id from comments.xml
+    comments_elm = doc_part._comments_part.element
+    para_to_cid = {}
+    for c in comments_elm.findall(qn("w:comment")):
+        para = c.find(f".//{{{W_NS}}}p")
+        pid = para.get(f"{{{W14_NS}}}paraId") if para is not None else ""
+        if pid:
+            para_to_cid[pid] = c.get(qn("w:id"))
+
+    return {cid: para_done.get(pid, False) for pid, cid in para_to_cid.items()}
 
 
 def _get_thumbsup_para_ids(doc_part) -> set:
@@ -124,6 +153,17 @@ def _set_run_font(run, font_name: str = "Times New Roman", font_size: int = 10, 
         r_fonts.set(qn(key), font_name)
 
 
+def _set_paragraph_font(paragraph, font_name: str = "Times New Roman", font_size: int = 12) -> None:
+    """Aplica fonte padrao a todos os runs do paragrafo.
+
+    Se o paragrafo estiver vazio, cria um run vazio apenas para persistir a formatacao.
+    """
+    if not paragraph.runs:
+        paragraph.add_run("")
+    for run in paragraph.runs:
+        _set_run_font(run, font_name=font_name, font_size=font_size, bold=run.font.bold)
+
+
 def _word_text_nodes(para):
     return [node for node in para._element.iter() if getattr(node, "tag", None) == qn("w:t")]
 
@@ -142,6 +182,22 @@ def _replace_in_word_text_nodes(para, transform) -> bool:
     for node in nodes[1:]:
         node.text = ""
     return True
+
+
+def _paragraph_has_omml(para) -> bool:
+    for node in para._element.iter():
+        if getattr(node, "tag", None) in {f"{{{M_NS}}}oMath", f"{{{M_NS}}}oMathPara"}:
+            return True
+    return False
+
+
+def _paragraph_is_in_table(para) -> bool:
+    parent = para._element.getparent()
+    while parent is not None:
+        if parent.tag == qn("w:tc"):
+            return True
+        parent = parent.getparent()
+    return False
 
 
 def _get_body_children(doc: Document):
@@ -413,15 +469,19 @@ def _looks_like_equation_text(text: str) -> bool:
 def _extract_equations(doc: Document) -> list[dict]:
     equations = []
     for idx, para in enumerate(doc.paragraphs):
+        if _paragraph_is_in_table(para):
+            continue
         full_text = _get_paragraph_full_text(para).strip()
         plain_text = _get_paragraph_text(para).strip()
         match = EQUATION_END_RE.search(full_text)
         if not match:
             continue
+        if not _paragraph_has_omml(para):
+            continue
 
         eq_number = int(match.group(1))
         eq_text = EQUATION_END_RE.sub("", full_text).strip()
-        if not eq_text or not (_looks_like_equation_text(eq_text) or EQUATION_LABEL_RE.fullmatch(plain_text)):
+        if not eq_text or not EQUATION_LABEL_RE.fullmatch(plain_text):
             continue
 
         equations.append({
@@ -511,35 +571,69 @@ def _validate_equation_state(doc: Document) -> dict:
     }
 
 
-def _renumber_reference_text(text: str, mapping: dict[int, int]) -> str:
+def _renumber_reference_text(
+    text: str,
+    mapping_options: dict[int, list[int]],
+    fallback_old_number: int | None = None,
+) -> tuple[str, list[dict]]:
+    warnings: list[dict] = []
+
+    def resolve_number(value: int) -> int | None:
+        options = mapping_options.get(value, [])
+        if len(options) == 1:
+            return options[0]
+        # Corrige uma referencia orfa quando o texto aponta para a equacao
+        # exibida imediatamente acima, mas o numero ficou defasado em 1.
+        if not options and fallback_old_number is not None and abs(value - fallback_old_number) == 1:
+            fallback_options = mapping_options.get(fallback_old_number, [])
+            if len(fallback_options) == 1:
+                return fallback_options[0]
+        return None
+
+    def register_warning(kind: str, raw: str, numbers: list[int], reason: str) -> None:
+        warnings.append({
+            "kind": kind,
+            "raw": raw,
+            "numbers": numbers,
+            "reason": reason,
+        })
+
     def replace_range(match):
         start = int(match.group(1))
         end = int(match.group(2))
-        if start not in mapping or end not in mapping:
+        resolved_start = resolve_number(start)
+        resolved_end = resolve_number(end)
+        if resolved_start is None or resolved_end is None:
+            register_warning("range", match.group(0), [start, end], "intervalo com mapeamento ambiguo ou ausente")
             return match.group(0)
         connector = "até" if "até" in match.group(0).lower() else "a"
         prefix = "eqs." if match.group(0).lower().startswith("eqs.") else "Equações"
-        return f"{prefix} ({mapping[start]}) {connector} ({mapping[end]})"
+        return f"{prefix} ({resolved_start}) {connector} ({resolved_end})"
 
     def replace_pair(match):
         left = int(match.group(1))
         right = int(match.group(2))
-        if left not in mapping or right not in mapping:
+        resolved_left = resolve_number(left)
+        resolved_right = resolve_number(right)
+        if resolved_left is None or resolved_right is None:
+            register_warning("pair", match.group(0), [left, right], "par com mapeamento ambiguo ou ausente")
             return match.group(0)
         prefix = "eqs." if match.group(0).lower().startswith("eqs.") else "Equações"
-        return f"{prefix} ({mapping[left]}) e ({mapping[right]})"
+        return f"{prefix} ({resolved_left}) e ({resolved_right})"
 
     def replace_single(match):
         value = int(match.group(1))
-        if value not in mapping:
+        resolved = resolve_number(value)
+        if resolved is None:
+            register_warning("single", match.group(0), [value], "referencia com mapeamento ambiguo ou ausente")
             return match.group(0)
         prefix = "eq." if match.group(0).lower().startswith("eq.") else "Equação"
-        return f"{prefix} ({mapping[value]})"
+        return f"{prefix} ({resolved})"
 
     updated = RANGE_EQ_REF_RE.sub(replace_range, text)
     updated = PAIR_EQ_REF_RE.sub(replace_pair, updated)
     updated = SINGLE_EQ_REF_RE.sub(replace_single, updated)
-    return updated
+    return updated, warnings
 
 
 # ── Tools ────────────────────────────────────────────────────────────────────
@@ -560,6 +654,17 @@ def list_paragraphs(doc_path: str) -> list[dict]:
 def list_comments(doc_path: str) -> list[dict]:
     """Lista todos os comentarios do DOCX."""
     return _get_comments(doc_path)
+
+
+@mcp.tool()
+def get_situation(doc_path: str, comment_id: str = "") -> dict:
+    """Retorna se um comentario esta resolvido ou nao. Se comment_id for omitido, retorna todos."""
+    situations = _get_comment_situations(doc_path)
+    if comment_id:
+        if comment_id not in situations:
+            return {"error": f"Comentario {comment_id} nao encontrado."}
+        return {"id": comment_id, "resolved": situations[comment_id]}
+    return [{"id": cid, "resolved": resolved} for cid, resolved in situations.items()]
 
 
 @mcp.tool()
@@ -801,11 +906,15 @@ def remove_resolved_comments(doc_path: str, output_path: str = "") -> str:
         return "0 comentarios resolvidos removidos."
 
     # Map paraId -> comment_id from comments.xml
+    # paraId is on the child <w:p> paragraph inside the comment, not on <w:comment> itself
     comments_elm = doc_part._comments_part.element
+    W14_NS = "http://schemas.microsoft.com/office/word/2010/wordml"
     para_to_cid = {}
     for c in comments_elm.findall(qn("w:comment")):
-        pid = c.get(qn("w14:paraId")) or c.get(f"{{{W_NS}}}paraId") or c.get("paraId", "")
-        para_to_cid[pid] = c.get(qn("w:id"))
+        para = c.find(f".//{{{W_NS}}}p")
+        pid = para.get(f"{{{W14_NS}}}paraId") if para is not None else ""
+        if pid:
+            para_to_cid[pid] = c.get(qn("w:id"))
 
     # Group threads: parent_paraId -> [child_paraIds]
     threads = {}
@@ -941,8 +1050,9 @@ def insert_citation(
 
     para = doc.paragraphs[paragraph_index]
 
-    # Adicionar citacao ao final do paragrafo
-    run = para.add_run(f" {citation}")
+    # Adicionar citacao ao final do paragrafo e normalizar fonte do paragrafo inteiro
+    para.add_run(f" {citation}")
+    _set_paragraph_font(para, font_name="Times New Roman", font_size=12)
 
     # Comentario unificado com citacao e fonte
     if source:
@@ -953,7 +1063,8 @@ def insert_citation(
     # Adicionar referencia ao final do documento (sem duplicar)
     existing_refs = {_get_paragraph_text(p).strip() for p in doc.paragraphs}
     if reference.strip() not in existing_refs:
-        doc.add_paragraph(reference)
+        ref_para = doc.add_paragraph(reference)
+        _set_paragraph_font(ref_para, font_name="Times New Roman", font_size=12)
 
     save_path = output_path if output_path and output_path != doc_path else doc_path
     if output_path and output_path != doc_path:
@@ -985,16 +1096,13 @@ def replace_paragraph_text(
 
     para = doc.paragraphs[paragraph_index]
 
-    # Capturar estilo do primeiro run antes de limpar
+    # Capturar apenas o estado de negrito do primeiro run antes de limpar.
+    # Para texto substituido, a regra e padronizar em Times New Roman 12.
     font_name = "Times New Roman"
-    font_size = 10
+    font_size = 12
     bold = None
     if para.runs:
         first_run = para.runs[0]
-        if first_run.font.name:
-            font_name = first_run.font.name
-        if first_run.font.size:
-            font_size = int(first_run.font.size.pt)
         bold = first_run.font.bold
 
     # Limpar runs existentes e inserir novo texto
@@ -1007,6 +1115,7 @@ def replace_paragraph_text(
         target_run = para.add_run(new_text)
 
     _set_run_font(target_run, font_name=font_name, font_size=font_size, bold=bold)
+    _set_paragraph_font(para, font_name=font_name, font_size=font_size)
 
     # Comentario de atribuicao
     anchor = _ensure_paragraph_anchor(para)
@@ -1135,9 +1244,11 @@ def renumber_equations(
 ) -> dict:
     """Renumera equacoes em ordem de aparicao e atualiza referencias textuais.
 
-    A operacao sempre valida o estado antes e depois da alteracao. Se houver
-    referencias para equacoes inexistentes, duplicidades ou intervalos invalidos,
-    a renumeracao e abortada. `output_path` default: salva in-place.
+    Considera apenas equacoes OMML em paragrafo isolado com rotulo `(N)`.
+    A operacao renumera em ordem de aparicao e tenta atualizar referencias
+    textuais de forma best effort. Quando houver ambiguidade ou falta de
+    mapeamento, retorna avisos para inspecao manual. `output_path` default:
+    salva in-place.
     """
     doc = Document(doc_path)
     before = _validate_equation_state(doc)
@@ -1149,23 +1260,25 @@ def renumber_equations(
             "validation_before": before,
         }
 
-    if not before["is_valid"]:
-        return {
-            "ok": False,
-            "message": "Renumeração abortada: o documento possui inconsistencias nas referencias de equacoes.",
-            "validation_before": before,
-        }
-
-    mapping = {
-        eq["equation_number"]: start_number + offset
-        for offset, eq in enumerate(before["equations"])
+    mapping: dict[int, int] = {}
+    mapping_options: dict[int, list[int]] = {}
+    equation_by_paragraph = {
+        eq["paragraph_index"]: eq["equation_number"]
+        for eq in before["equations"]
     }
+    duplicate_reference_numbers = set(before["duplicates"])
+
+    for offset, eq in enumerate(before["equations"]):
+        old_number = eq["equation_number"]
+        new_number = start_number + offset
+        mapping[old_number] = new_number
+        mapping_options.setdefault(old_number, []).append(new_number)
 
     # Atualizar labels das equacoes sem tocar nos elementos matematicos.
-    for eq in before["equations"]:
+    for offset, eq in enumerate(before["equations"]):
         para = doc.paragraphs[eq["paragraph_index"]]
         old_number = eq["equation_number"]
-        new_number = mapping[old_number]
+        new_number = start_number + offset
 
         def relabel(text: str) -> str:
             return re.sub(rf"\({old_number}\)\s*$", f"({new_number})", text)
@@ -1173,8 +1286,51 @@ def renumber_equations(
         _replace_in_word_text_nodes(para, relabel)
 
     # Atualizar referencias textuais no documento inteiro.
-    for para in doc.paragraphs:
-        _replace_in_word_text_nodes(para, lambda text: _renumber_reference_text(text, mapping))
+    warnings: list[dict] = []
+    for idx, para in enumerate(doc.paragraphs):
+        fallback_old_number = None
+        prev_idx = idx - 1
+        while prev_idx >= 0:
+            prev_text = _get_paragraph_full_text(doc.paragraphs[prev_idx]).strip()
+            if prev_text:
+                fallback_old_number = equation_by_paragraph.get(prev_idx)
+                break
+            prev_idx -= 1
+        nodes = _word_text_nodes(para)
+        if not nodes:
+            continue
+        original = "".join(node.text or "" for node in nodes)
+        updated, local_warnings = _renumber_reference_text(
+            original,
+            mapping_options,
+            fallback_old_number=fallback_old_number,
+        )
+        if updated != original:
+            nodes[0].text = updated
+            for node in nodes[1:]:
+                node.text = ""
+        for item in local_warnings:
+            item["paragraph_index"] = idx
+            item["paragraph_text"] = original[:300]
+            warnings.append(item)
+
+    for number in sorted(duplicate_reference_numbers):
+        warnings.append({
+            "paragraph_index": None,
+            "kind": "duplicate-equation-number",
+            "raw": f"({number})",
+            "numbers": [number],
+            "reason": "numero de equacao repetido no documento; referencias para esse numero podem exigir inspecao manual",
+        })
+
+    for item in before["invalid_ranges"]:
+        warnings.append({
+            "paragraph_index": item["paragraph_index"],
+            "kind": "invalid-range",
+            "raw": item["raw"],
+            "numbers": item["numbers"],
+            "reason": "intervalo textual invalido; inspecao manual recomendada",
+        })
 
     save_path = output_path if output_path and output_path != doc_path else doc_path
     if output_path and output_path != doc_path:
@@ -1185,9 +1341,10 @@ def renumber_equations(
     after = _validate_equation_state(after_doc)
 
     return {
-        "ok": after["is_valid"],
-        "message": "Equacoes renumeradas e referencias textuais atualizadas." if after["is_valid"] else "Renumeração concluida, mas a validacao final encontrou inconsistencias.",
+        "ok": True,
+        "message": "Equacoes renumeradas. Referencias textuais foram atualizadas quando o mapeamento era inequivoco.",
         "mapping": mapping,
+        "warnings": warnings,
         "validation_before": before,
         "validation_after": after,
         "output_path": save_path,
