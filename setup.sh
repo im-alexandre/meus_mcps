@@ -15,7 +15,7 @@ if grep -qi microsoft /proc/version 2>/dev/null; then
 elif [[ "${OS:-}" == "Windows_NT" ]]; then
   OS="windows"
   PYTHON_CMD="python"
-  REPO_ROOT="$(cygpath -w "$REPO_ROOT" 2>/dev/null || echo "$REPO_ROOT")"
+  REPO_ROOT="$(cygpath -m "$REPO_ROOT" 2>/dev/null || echo "$REPO_ROOT")"
   REPO_ROOT_WSL="$("$PYTHON_CMD" -c "
 import sys
 p = sys.argv[1].replace('\\\\', '/')
@@ -65,8 +65,8 @@ AI_BIN="${HOME}/.ai/bin"
 if [[ "$OS" == "windows" ]]; then
   PWSH="$(command -v pwsh 2>/dev/null || echo 'C:/Program Files/PowerShell/7/pwsh.exe')"
   AUTODEV_CMD="$PWSH"
-  AUTODEV_ARGS="[\"-File\", \"$(cygpath -w "$AI_BIN" 2>/dev/null || echo "$AI_BIN")/autodev-codebase-mcp.ps1\"]"
-  AUTODEV_ARGS_TOML="[\"-File\", \"$(cygpath -w "$AI_BIN" 2>/dev/null || echo "$AI_BIN")/autodev-codebase-mcp.ps1\"]"
+  AUTODEV_ARGS="[\"-File\", \"$(cygpath -m "$AI_BIN" 2>/dev/null || echo "$AI_BIN")/autodev-codebase-mcp.ps1\"]"
+  AUTODEV_ARGS_TOML="[\"-File\", \"$(cygpath -m "$AI_BIN" 2>/dev/null || echo "$AI_BIN")/autodev-codebase-mcp.ps1\"]"
 else
   AUTODEV_CMD="bash"
   AUTODEV_ARGS="[\"${AI_BIN}/autodev-codebase-mcp.sh\"]"
@@ -80,10 +80,12 @@ CODEX_DIR="${HOME}/.codex"
 mkdir -p "$CLAUDE_DIR" "$AI_BIN"
 
 resolve_template() {
-  "$PYTHON_CMD" - "$REPO_ROOT" "$PYTHON_CMD" "$AUTODEV_CMD" "$AUTODEV_ARGS" "$AI_BIN" "$REPO_ROOT_WSL" <<'PYEOF'
+  local template_file="$1"
+  "$PYTHON_CMD" - "$template_file" "$REPO_ROOT" "$PYTHON_CMD" "$AUTODEV_CMD" "$AUTODEV_ARGS" "$AI_BIN" "$REPO_ROOT_WSL" <<'PYEOF'
 import sys
-content = sys.stdin.read()
-repo_root, python_cmd, autodev_cmd, autodev_args, ai_bin, repo_root_wsl = sys.argv[1:]
+template_file, repo_root, python_cmd, autodev_cmd, autodev_args, ai_bin, repo_root_wsl = sys.argv[1:]
+with open(template_file, encoding="utf-8") as f:
+    content = f.read()
 content = content.replace("{{REPO_ROOT}}", repo_root)
 content = content.replace("{{PYTHON_CMD}}", python_cmd)
 content = content.replace("{{AUTODEV_CMD}}", autodev_cmd)
@@ -99,14 +101,27 @@ PYEOF
 merge_json() {
   local target="$1"
   local source_content="$2"
-  "$PYTHON_CMD" - "$target" <<PYEOF
+  # Gravar source em arquivo temporário para evitar problemas de escaping
+  local tmp_src
+  tmp_src="$(mktemp)"
+  printf '%s' "$source_content" > "$tmp_src"
+  # Converter paths para formato acessível ao Python no Windows
+  local target_py="$target"
+  local tmp_src_py="$tmp_src"
+  if [[ "${OS:-}" == "windows" ]]; then
+    target_py="$(cygpath -m "$target" 2>/dev/null || echo "$target")"
+    tmp_src_py="$(cygpath -m "$tmp_src" 2>/dev/null || echo "$tmp_src")"
+  fi
+  "$PYTHON_CMD" - "$target_py" "$tmp_src_py" <<'PYEOF'
 import json, sys
 
-target_path = sys.argv[1]
-source = json.loads("""$source_content""")
+target_path, source_path = sys.argv[1], sys.argv[2]
+
+with open(source_path, encoding="utf-8") as f:
+    source = json.load(f)
 
 try:
-    with open(target_path) as f:
+    with open(target_path, encoding="utf-8") as f:
         existing = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
     existing = {}
@@ -123,12 +138,13 @@ if src_hooks:
         if hook.get("matcher") not in existing_matchers:
             existing["hooks"]["PreToolUse"].append(hook)
 
-with open(target_path, "w") as f:
+with open(target_path, "w", encoding="utf-8") as f:
     json.dump(existing, f, indent=2, ensure_ascii=False)
     f.write("\n")
 
 print("  atualizado.")
 PYEOF
+  rm -f "$tmp_src"
 }
 
 # Adiciona ou substitui secao [mcp_servers.autodev-codebase] no config.toml do Codex
@@ -136,6 +152,10 @@ merge_codex_toml() {
   local target="$1"
   local autodev_cmd="$2"
   local autodev_args="$3"
+  # Converter para path acessível ao Python no Windows
+  if [[ "${OS:-}" == "windows" ]]; then
+    target="$(cygpath -m "$target" 2>/dev/null || echo "$target")"
+  fi
   "$PYTHON_CMD" - "$target" "$autodev_cmd" "$autodev_args" <<'PYEOF'
 import sys, re
 
@@ -185,14 +205,14 @@ echo "  CLAUDE.md -> $CLAUDE_MD"
 # ── Claude — settings.json (hooks + mcpServers customizados) ──────────────────
 
 SETTINGS_PATH="$CLAUDE_DIR/settings.json"
-SETTINGS_RESOLVED="$(resolve_template < "$REPO_ROOT/ai-rules/claude/claude_settings.json")"
+SETTINGS_RESOLVED="$(resolve_template "$REPO_ROOT/ai-rules/claude/claude_settings.json")"
 echo -n "  settings.json: "
 merge_json "$SETTINGS_PATH" "$SETTINGS_RESOLVED"
 
 # ── Claude — .mcp.json (todos os MCPs incluindo autodev-codebase) ─────────────
 
 MCP_PATH="$CLAUDE_DIR/.mcp.json"
-MCP_RESOLVED="$(resolve_template < "$REPO_ROOT/ai-rules/claude/mcp.json")"
+MCP_RESOLVED="$(resolve_template "$REPO_ROOT/ai-rules/claude/mcp.json")"
 echo -n "  .mcp.json: "
 merge_json "$MCP_PATH" "$MCP_RESOLVED"
 
@@ -239,7 +259,7 @@ if [[ "$OS" == "windows" ]]; then
   CLAUDE_DESKTOP_DIR="$(cygpath -u "${APPDATA:-}")/Claude"
   mkdir -p "$CLAUDE_DESKTOP_DIR"
   DESKTOP_CONFIG="$CLAUDE_DESKTOP_DIR/claude_desktop_config.json"
-  DESKTOP_MCP_RESOLVED="$(resolve_template < "$REPO_ROOT_SRC/ai-rules/claude/claude_desktop_wsl_mcp.json")"
+  DESKTOP_MCP_RESOLVED="$(resolve_template "$REPO_ROOT/ai-rules/claude/claude_desktop_wsl_mcp.json")"
   echo -n "  claude_desktop_config.json: "
   merge_json "$DESKTOP_CONFIG" "$DESKTOP_MCP_RESOLVED"
 
