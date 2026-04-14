@@ -28,6 +28,15 @@ Se o script nao puder ser executado:
 2. Mescle `ai-rules/claude/claude_settings.json` em `~/.claude/settings.json`, substituindo `{{REPO_ROOT}}` pelo path real.
 3. Copie `AGENTS.minimal.md` para `~/.codex/AGENTS.md` com o mesmo ajuste de path.
 
+## Scripts de MCP por plataforma
+
+| Script | Plataforma | Localização apos bootstrap |
+|---|---|---|
+| `scripts/autodev-codebase-mcp.ps1` | Windows | `C:/Users/<user>/.ai/bin/` (instalado manualmente) |
+| `scripts/autodev-codebase-mcp.sh` | WSL / Linux | `~/.ai/bin/` (instalado pelo `setup.sh`) |
+
+O `setup.sh` copia automaticamente o `.sh` para `~/.ai/bin/` em ambientes WSL e Linux.
+
 ## MCPs externos
 
 Os MCPs abaixo nao devem ser copiados de dumps locais. Eles devem ser instalados a partir dos repositorios oficiais.

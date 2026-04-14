@@ -109,6 +109,25 @@ else
   echo "  ~/.codex nao encontrado — pulando Codex (rode novamente depois de instalar o Codex)."
 fi
 
+# ── Scripts de MCP (WSL/Linux) ────────────────────────────────────────────────
+
+if [[ "$OS" == "wsl" || "$OS" == "linux" ]]; then
+  echo ""
+  echo "==> Instalando scripts de MCP para $OS..."
+  AI_BIN="${HOME}/.ai/bin"
+  mkdir -p "$AI_BIN"
+  cp "$REPO_ROOT/scripts/autodev-codebase-mcp.sh" "$AI_BIN/"
+  chmod +x "$AI_BIN/autodev-codebase-mcp.sh"
+  echo "  autodev-codebase-mcp.sh instalado em $AI_BIN/"
+  echo ""
+  echo "  Adicione ao ~/.claude/.mcp.json (ou ~/.claude/mcp.json) a entrada:"
+  echo '  "autodev-codebase": {'
+  echo '    "command": "bash",'
+  echo "    \"args\": [\"$AI_BIN/autodev-codebase-mcp.sh\"],"
+  echo '    "env": { "CODEBASE_WORKSPACE": "${CLAUDE_PROJECT_DIR}" }'
+  echo '  }'
+fi
+
 # ── Feito ─────────────────────────────────────────────────────────────────────
 
 echo ""
