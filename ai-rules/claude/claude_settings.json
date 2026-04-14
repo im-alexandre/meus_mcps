@@ -1,18 +1,4 @@
 {
-  "mcpServers": {
-    "local-llm": {
-      "command": "python",
-      "args": ["{{REPO_ROOT}}/server_llm.py"]
-    },
-    "scopus-search": {
-      "command": "python",
-      "args": ["{{REPO_ROOT}}/server_scopus.py"]
-    },
-    "docx-manager": {
-      "command": "python",
-      "args": ["{{REPO_ROOT}}/server_docx.py"]
-    }
-  },
   "hooks": {
     "PreToolUse": [
       {
@@ -34,5 +20,6 @@
         ]
       }
     ]
-  }
+  },
+  "skipDangerousModePermissionPrompt": true
 }

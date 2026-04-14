@@ -14,7 +14,7 @@ Ao final do bootstrap, o ambiente deve ter:
 - `~/.codex/config.toml` com os MCPs do Codex configurados
 - `~/.claude/CLAUDE.md` apontando para o `AUTHORITATIVE_RULES_ROOT` real
 - `~/.claude/settings.json` configurado a partir do template do repositório
-- `~/.claude/mcp.json` configurado a partir do template do repositório, quando aplicavel
+- `~/.claude/.mcp.json` configurado a partir do template do repositório, quando aplicavel
 
 ## Fluxo unico
 
@@ -95,9 +95,9 @@ Se `~/.claude/settings.json` ja existir:
 - preserve chaves nao relacionadas
 - faca merge de `hooks.PreToolUse` sem duplicar `matcher`
 
-### 6. Configurar `~/.claude/mcp.json`
+### 6. Configurar `~/.claude/.mcp.json`
 
-Use `ai-rules/claude/mcp.json` como template.
+Use `ai-rules/claude/mcp.json` como template (o nome do arquivo de destino tem ponto: `.mcp.json`).
 
 Substitua manualmente:
 
@@ -106,7 +106,7 @@ Substitua manualmente:
 
 > **Nota**: o servidor `autodev-codebase` ja usa `pwsh` com o script `scripts/autodev-codebase-current-git-mcp.ps1` — nao ha placeholders `{{AUTODEV_CMD}}` ou `{{AUTODEV_ARGS}}` no template.
 
-Se `~/.claude/mcp.json` ja existir, faca merge preservando entradas nao relacionadas.
+Se `~/.claude/.mcp.json` ja existir, faca merge preservando entradas nao relacionadas.
 
 ### 7. Claude Desktop
 
@@ -147,7 +147,7 @@ Confirme:
 - `~/.claude/CLAUDE.md` existe
 - `~/.claude/CLAUDE.md` aponta para `<REPO_ROOT>/ai-rules`
 - `~/.claude/settings.json` e JSON valido
-- `~/.claude/mcp.json` e JSON valido, se o arquivo existir
+- `~/.claude/.mcp.json` e JSON valido, se o arquivo existir
 
 ### Sanidade do repositório
 
