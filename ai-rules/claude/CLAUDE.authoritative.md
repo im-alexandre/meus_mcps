@@ -1,44 +1,40 @@
-# Claude Global Rules
+# Claude Code — Regras Autoritativas
 
-Estas regras sao a fonte autoritativa para o Claude. Trate `AGENTS.md` do projeto como instrucao valida e complementar. Quando houver conflito, o arquivo mais especifico do projeto prevalece.
+Fonte unica de verdade para o Claude Code neste ambiente. Regras de projeto especifico sobrescrevem estas quando houver conflito.
+
+## Contexto global
+
+Este arquivo contem apenas regras invariantes entre projetos. Regras especificas de contexto ficam em arquivos separados e sao carregadas sob demanda — nunca no bootstrap.
 
 ## Commits
 
 Nunca incluir linha `Co-Authored-By` em mensagens de commit.
 
-## Handoff
+## Ordem de ferramentas de busca
 
-Leia `AUTHORITATIVE_RULES_ROOT/shared/handoff.md` e siga esse protocolo para artefatos de planejamento, execucao e revisao entre Codex e Claude.
+O `settings.json` global aplica hooks `PreToolUse` que bloqueiam `Grep` e `Glob` diretamente.
 
-## Planejamento e delegacao
+Ao receber esse bloqueio:
 
-Leia `AUTHORITATIVE_RULES_ROOT/shared/task-delegation-policy.md`.
+1. Use `mcp__autodev-codebase__search_codebase` para buscas semanticas de codigo.
+2. Use `mcp__autodev-codebase__outline_codebase` para mapear estrutura de modulos e funcoes.
+3. Use `Read` diretamente apenas para arquivos cujo caminho ja e conhecido.
+4. Recorra a `Grep` / `Glob` somente quando houver divergencia confirmada entre o indice e o estado real — nesse caso, informe o usuario antes de prosseguir para que ele possa autorizar manualmente.
 
-## Atualizacao global sincronizada
+## DOCX
 
-Quando o usuario pedir para atualizar `AGENTS.md` ou `CLAUDE.md` global:
+Qualquer tarefa que leia, revise, valide, comente, cite, formate, renumere ou edite arquivo `.docx` deve ler `AUTHORITATIVE_RULES_ROOT/mcp/docx-manager.md` antes de prosseguir, mesmo que o MCP `docx-manager` ainda nao tenha sido chamado no task.
 
-1. atualize `~/.codex/AGENTS.md`
-2. atualize `~/.claude/CLAUDE.md`
-3. atualize `AGENTS.minimal.md` e `CLAUDE.minimal.md` no repo clonado
-4. atualize os arquivos afetados em `AUTHORITATIVE_RULES_ROOT`
-5. execute `git add`, `git commit` e `git push` no repo clonado
-6. se o primeiro `git push` falhar por permissao, instrua o usuario a configurar acesso de escrita e autenticacao GitHub
+Se o `docx-manager` nao cobrir o caso, use `python-docx` como fallback. Se `python-docx` nao estiver disponivel, instale-o antes de continuar.
 
-Leia tambem `AUTHORITATIVE_RULES_ROOT/shared/global-config-update-policy.md`.
+## Regras sob demanda
 
-## Exploracao do repositorio
+Carregue os arquivos abaixo somente quando o task exigir — nao antecipadamente:
 
-Leia `AUTHORITATIVE_RULES_ROOT/shared/mcp-policy.md`.
-
-Prioridade de MCPs:
-
-- `autodev-codebase`: obrigatorio como primeiro passo em exploracao de codigo
-- `local-llm`: auxiliar local para geracao leve e embeddings
-- `scopus-search`: bibliografia semantica em CSV Scopus
-- `docx-manager`: leitura e edicao dirigida de DOCX
-- `pdf-indexer`: instalacao e uso via repositorio oficial
-
-Antes do primeiro uso de um MCP neste task, leia o arquivo correspondente em `AUTHORITATIVE_RULES_ROOT/mcp/`.
-
-Ao manipular qualquer arquivo `.docx`, leia sempre `AUTHORITATIVE_RULES_ROOT/mcp/docx-manager.md` antes de prosseguir, mesmo que o MCP `docx-manager` ainda nao tenha sido chamado neste task. Se o `docx-manager` nao possuir recursos para concluir a tarefa, use `python-docx` como fallback e, se necessario, instale `python-docx` no ambiente global antes de continuar.
+| Condicao | Arquivo a carregar |
+|---|---|
+| Handoff formal (planejamento → execucao → revisao) | `AUTHORITATIVE_RULES_ROOT/shared/handoff.md` |
+| Delegacao ou uso de subagentes | `AUTHORITATIVE_RULES_ROOT/shared/task-delegation-policy.md` |
+| Primeiro uso de qualquer MCP no task | `AUTHORITATIVE_RULES_ROOT/shared/mcp-policy.md` |
+| Primeiro uso de um MCP especifico | `AUTHORITATIVE_RULES_ROOT/mcp/<nome>.md` |
+| Alteracao global de `AGENTS.md` ou `CLAUDE.md` | `AUTHORITATIVE_RULES_ROOT/shared/global-config-update-policy.md` |
