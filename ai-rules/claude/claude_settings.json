@@ -2,15 +2,15 @@
   "mcpServers": {
     "local-llm": {
       "command": "python",
-      "args": ["D:/mcp/server_llm.py"]
+      "args": ["{{REPO_ROOT}}/server_llm.py"]
     },
     "scopus-search": {
       "command": "python",
-      "args": ["D:/mcp/server_scopus.py"]
+      "args": ["{{REPO_ROOT}}/server_scopus.py"]
     },
     "docx-manager": {
       "command": "python",
-      "args": ["D:/mcp/server_docx.py"]
+      "args": ["{{REPO_ROOT}}/server_docx.py"]
     }
   },
   "hooks": {
