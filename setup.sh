@@ -82,8 +82,32 @@ mkdir -p "$CLAUDE_DIR" "$AI_BIN"
 resolve_template() {
   local template_file="$1"
   "$PYTHON_CMD" - "$template_file" "$REPO_ROOT" "$PYTHON_CMD" "$AUTODEV_CMD" "$AUTODEV_ARGS" "$AI_BIN" "$REPO_ROOT_WSL" <<'PYEOF'
-import sys
+import sys, re, subprocess
+
 template_file, repo_root, python_cmd, autodev_cmd, autodev_args, ai_bin, repo_root_wsl = sys.argv[1:]
+
+# Se repo_root_wsl nao foi resolvido pelo shell (windows), calcular aqui
+# para evitar que o Git Bash corrompa o path Linux com conversao automatica
+if not repo_root_wsl:
+    m = re.match(r'([A-Za-z]):[/\\](.*)', repo_root.replace('\\', '/'))
+    if m:
+        repo_root_wsl = f'/mnt/{m.group(1).lower()}/{m.group(2)}'.rstrip('/')
+
+# Caminho absoluto do python3 no WSL: consultar via subprocess para evitar
+# que o Git Bash converta o path retornado pela expansao de variaveis shell
+python_cmd_wsl = "python3"
+if autodev_cmd not in ("bash", "python3"):  # estamos no Windows
+    try:
+        result = subprocess.run(
+            ["wsl", "bash", "-lc", "which python3 2>/dev/null || echo /usr/bin/python3"],
+            capture_output=True, text=True, timeout=10
+        )
+        path = result.stdout.strip().split('\n')[0]
+        if path.startswith('/'):
+            python_cmd_wsl = path
+    except Exception:
+        pass
+
 with open(template_file, encoding="utf-8") as f:
     content = f.read()
 content = content.replace("{{REPO_ROOT}}", repo_root)
@@ -92,6 +116,7 @@ content = content.replace("{{AUTODEV_CMD}}", autodev_cmd)
 content = content.replace("{{AUTODEV_ARGS}}", autodev_args)
 content = content.replace("{{AI_BIN}}", ai_bin)
 content = content.replace("{{REPO_ROOT_WSL}}", repo_root_wsl)
+content = content.replace("{{PYTHON_CMD_WSL}}", python_cmd_wsl)
 print(content, end="")
 PYEOF
 }
