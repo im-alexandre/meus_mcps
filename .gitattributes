@@ -1,0 +1,20 @@
+# Força LF no repositório para todos os arquivos de texto
+* text=auto eol=lf
+
+# Scripts bash e Python: sempre LF
+*.sh    text eol=lf
+*.py    text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.toml  text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+
+# PowerShell: CRLF (Windows-native)
+*.ps1   text eol=crlf
+
+# Binários: sem conversão
+*.docx  binary
+*.pdf   binary
+*.png   binary
+*.jpg   binary
