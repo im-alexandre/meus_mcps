@@ -6,6 +6,8 @@ Estas regras sao a fonte autoritativa para o Codex. Quando houver conflito, o ar
 
 Mantenha o contexto de inicializacao enxuto. Carregue apenas regras globais invariantes neste arquivo e leia regras complementares somente quando o task exigir.
 
+Quando `AUTHORITATIVE_RULES_ROOT` ainda nao existir no ambiente local, use o bootstrap publico em `https://github.com/im-alexandre/meus_mcps/blob/main/bootstrap.md` como procedimento de configuracao global.
+
 ## Commits
 
 Nunca incluir linha `Co-Authored-By` em mensagens de commit.

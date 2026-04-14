@@ -6,6 +6,8 @@ Fonte unica de verdade para o Claude Code neste ambiente. Regras de projeto espe
 
 Este arquivo contem apenas regras invariantes entre projetos. Regras especificas de contexto ficam em arquivos separados e sao carregadas sob demanda — nunca no bootstrap.
 
+Quando `AUTHORITATIVE_RULES_ROOT` ainda nao existir no ambiente local, use o bootstrap publico em `https://github.com/im-alexandre/meus_mcps/blob/main/bootstrap.md` como procedimento de configuracao global.
+
 ## Commits
 
 Nunca incluir linha `Co-Authored-By` em mensagens de commit.

@@ -15,11 +15,17 @@ O conjunto está amplamente testado com Python e há indícios de bom funcioname
 - `server_llm.py`: servidor MCP para geração e embeddings locais
 - `server_scopus.py`: servidor MCP para indexação e busca em CSVs do Scopus
 - `server_docx.py`: servidor MCP para leitura, comentários, citações e equações em `.docx`
+- `bootstrap.md`: ponto de entrada publico para configurar Claude e Codex a partir de uma unica URL
+- `AGENTS.minimal.md`: stub minimo para `~/.codex/AGENTS.md`
+- `CLAUDE.minimal.md`: stub minimo para `~/.claude/CLAUDE.md`
+- `ai-rules/codex/AGENTS.authoritative.md`: regras autoritativas globais do Codex
+- `ai-rules/claude/CLAUDE.authoritative.md`: regras autoritativas globais do Claude
 
-- `AGENTS.md.global`: referência de instruções para o Codex operar em modo local-first com estes MCPs
-- `CLAUDE.md.global`: referência de instruções para o Claude operar em modo local-first com estes MCPs
+O fluxo recomendado de configuracao global agora e passar ao agente a URL da pagina de `bootstrap.md` no GitHub:
 
-Os arquivos `*.global` são cópias dos arquivos de configuração global de cada assistente (`~/.codex/AGENTS.md` e `~/.claude/CLAUDE.md`). Eles definem quais MCPs usar, em que ordem, com exemplos de pedidos em linguagem natural para cada ferramenta, e a regra de priorizar índices locais (`autodev-codebase`, `local-llm`) antes de recorrer a buscas brutas no sistema de arquivos. Sirva-se deles como ponto de partida ao configurar o assistente em uma nova máquina.
+- https://github.com/im-alexandre/meus_mcps/blob/main/bootstrap.md
+
+Esse documento instrui o agente a editar os arquivos locais corretos e a usar os templates deste repositório como fonte de verdade.
 
 ## Contexto do Workflow
 
@@ -60,7 +66,7 @@ Outras escolhas que sustentam esse equilíbrio:
 - manter busca semântica separada da decisão bibliográfica final
 - usar comentários no Word como canal de instrução e validação humana
 
-## Instalação
+## Instalacao
 
 Clone o repositório:
 
@@ -81,67 +87,36 @@ Instale as dependências:
 python -m pip install -r requirements.txt
 ```
 
-### Codex
+## Bootstrap recomendado
 
-Adicione os servidores ao arquivo `~/.codex/config.toml`:
+Para configurar Codex ou Claude em uma maquina nova, entregue ao agente a URL:
 
-```toml
-[mcp_servers.local-llm]
-command = "python"
-args = ["C:/tools/meus_mcps/server_llm.py"]
-
-[mcp_servers.scopus-search]
-command = "python"
-args = ["C:/tools/meus_mcps/server_scopus.py"]
-
-[mcp_servers.docx-manager]
-command = "python"
-args = ["C:/tools/meus_mcps/server_docx.py"]
+```text
+https://github.com/im-alexandre/meus_mcps/blob/main/bootstrap.md
 ```
 
-Se quiser usar também o `pdf-indexer`, adicione:
+O `bootstrap.md` e o procedimento canônico. Ele cobre:
 
-```toml
-[mcp_servers.pdf-indexer]
-command = "python"
-args = ["C:/tools/meus_mcps/pdf-indexer-mcp/semantic_chunked_pdf_rag.py"]
-```
+- descoberta do `REPO_ROOT`
+- atualizacao de `~/.codex/AGENTS.md`
+- atualizacao de `~/.codex/config.toml`
+- atualizacao de `~/.claude/CLAUDE.md`
+- atualizacao de `~/.claude/settings.json`
+- atualizacao de `~/.claude/mcp.json`, quando aplicavel
 
-### Claude
+## Templates de configuracao
 
-Adicione os servidores ao arquivo `~/.claude/mcp.json`:
+Os templates usados pelo bootstrap sao:
 
-```json
-{
-  "mcpServers": {
-    "local-llm": {
-      "command": "python",
-      "args": ["C:/tools/meus_mcps/server_llm.py"]
-    },
-    "scopus-search": {
-      "command": "python",
-      "args": ["C:/tools/meus_mcps/server_scopus.py"]
-    },
-    "docx-manager": {
-      "command": "python",
-      "args": ["C:/tools/meus_mcps/server_docx.py"]
-    }
-  }
-}
-```
+- Codex:
+  - `AGENTS.minimal.md`
+  - `ai-rules/codex/codex_settings.toml`
+- Claude:
+  - `CLAUDE.minimal.md`
+  - `ai-rules/claude/claude_settings.json`
+  - `ai-rules/claude/mcp.json`
 
-Se quiser usar também o `pdf-indexer`, acrescente:
-
-```json
-{
-  "mcpServers": {
-    "pdf-indexer": {
-      "command": "python",
-      "args": ["C:/tools/meus_mcps/pdf-indexer-mcp/semantic_chunked_pdf_rag.py"]
-    }
-  }
-}
-```
+Esses arquivos devem ser copiados ou mesclados manualmente pelo agente no ambiente local, substituindo os placeholders pelo estado real da maquina.
 
 ## Serviços de suporte
 

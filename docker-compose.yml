@@ -2,16 +2,26 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ollama-cuda
+    restart: unless-stopped
     ports:
       - "11434:11434"
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
       OLLAMA_DEBUG: INFO
-      OLLAMA_GPU_OVERHEAD: 1073741824
+      OLLAMA_NUM_PARALLEL: "1"
+
+      OLLAMA_GPU_OVERHEAD: "1073741824" # 1.25 GiB
+
+      # OLLAMA_GPU_OVERHEAD: "1073741824" # 1 GiB
+      # OLLAMA_GPU_OVERHEAD: "1342177280" # 1.25 GiB
+      # OLLAMA_GPU_OVERHEAD: "1610612736" # 1.5 GiB
+      # OLLAMA_GPU_OVERHEAD: "1879048192" # 1.75 GiB
+      # OLLAMA_GPU_OVERHEAD: "2147483648" # 2 GiB
+
     volumes:
       - type: bind
-        source: D:\ollama
-        target: /root/.ollama
+        source: D:\ollama\models
+        target: /root/.ollama/models
     deploy:
       resources:
         reservations:
@@ -19,3 +29,27 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  autodev-codebase:
+    build:
+      context: .
+      dockerfile: docker/autodev-codebase/Dockerfile
+    container_name: autodev-codebase
+    restart: unless-stopped
+    depends_on:
+      - ollama
+      - qdrant
+    ports:
+      - "3001:3001"
+
+volumes:
+  qdrant_storage:

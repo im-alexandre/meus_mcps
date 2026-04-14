@@ -10,7 +10,8 @@ Quando o usuario pedir para alterar a configuracao global:
 6. atualize `~/.claude/CLAUDE.md`
 7. atualize `AGENTS.minimal.md` e `CLAUDE.minimal.md` no repo clonado
 8. atualize os arquivos afetados em `AUTHORITATIVE_RULES_ROOT`
-9. execute `git add`, `git commit` e `git push` no repo clonado
-10. se o primeiro `git push` falhar por permissao, instrua o usuario a configurar acesso de escrita e autenticacao GitHub antes de tentar novamente
+9. se o bootstrap publico mudar, atualize tambem `bootstrap.md` para manter o fluxo por documentacao consistente
+10. execute `git add`, `git commit` e `git push` no repo clonado
+11. se o primeiro `git push` falhar por permissao, instrua o usuario a configurar acesso de escrita e autenticacao GitHub antes de tentar novamente
 
 Nunca mova conteudo extenso para os arquivos globais minimos apenas por conveniencia.

@@ -1,109 +1,167 @@
 # Bootstrap
 
-## Bootstrap de configuracoes
+URL publica recomendada para bootstrap manual-assistido:
 
-Use estas instrucoes quando a maquina ainda nao tiver o repositorio clonado e o usuario pedir para instalar a configuracao global a partir do repositorio publico.
+- https://github.com/im-alexandre/meus_mcps/blob/main/bootstrap.md
 
-### Metodo automatico (recomendado)
+Use este documento quando o ambiente global do Codex ou do Claude ainda nao estiver configurado. O objetivo e permitir que um agente configure os arquivos locais corretos apenas lendo esta pagina.
 
-1. Clone o repositorio:
-   - **Windows**: clone em `D:/mcp` (ou qualquer diretorio, o script detecta automaticamente)
-   - **WSL**: o repo Windows ja fica acessivel em `/mnt/d/mcp` — nao e necessario clonar novamente
-   - **Linux nativo**: clone em `~/meus_mcps` ou qualquer diretorio
+## Resultado esperado
 
-2. Execute o script de bootstrap:
-   ```bash
-   bash setup.sh
-   ```
-   O script detecta o OS (Windows/WSL/Linux), resolve `REPO_ROOT`, escreve `~/.claude/CLAUDE.md`,
-   mescla hooks e MCPs em `~/.claude/settings.json` e configura `~/.codex/AGENTS.md` se o Codex estiver instalado.
+Ao final do bootstrap, o ambiente deve ter:
 
-3. Reinicie o Claude Code para carregar os novos hooks e MCPs.
+- `~/.codex/AGENTS.md` apontando para o `AUTHORITATIVE_RULES_ROOT` real
+- `~/.codex/config.toml` com os MCPs do Codex configurados
+- `~/.claude/CLAUDE.md` apontando para o `AUTHORITATIVE_RULES_ROOT` real
+- `~/.claude/settings.json` configurado a partir do template do repositório
+- `~/.claude/mcp.json` configurado a partir do template do repositório, quando aplicavel
 
-### Metodo manual (fallback)
+## Fluxo unico
 
-Se o script nao puder ser executado:
+### 1. Garantir um clone local do repositorio
 
-1. Copie `CLAUDE.minimal.md` para `~/.claude/CLAUDE.md` e substitua `AUTHORITATIVE_RULES_ROOT` pelo path real do repositorio.
-2. Mescle `ai-rules/claude/claude_settings.json` em `~/.claude/settings.json`, substituindo `{{REPO_ROOT}}` pelo path real.
-3. Copie `AGENTS.minimal.md` para `~/.codex/AGENTS.md` com o mesmo ajuste de path.
+Se o repositorio ainda nao existir localmente, clone:
 
-## Scripts de MCP por plataforma
-
-| Script | Plataforma | Localização apos bootstrap |
-|---|---|---|
-| `scripts/autodev-codebase-mcp.ps1` | Windows | `C:/Users/<user>/.ai/bin/` (instalado manualmente) |
-| `scripts/autodev-codebase-mcp.sh` | WSL / Linux | `~/.ai/bin/` (instalado pelo `setup.sh`) |
-
-O `setup.sh` copia automaticamente o `.sh` para `~/.ai/bin/` em ambientes WSL e Linux.
-
-## Isolamento WSL (Claude CLI nativo no WSL)
-
-Por padrao, o WSL herda o PATH do Windows (`appendWindowsPath=true`). Sem isolamento,
-`claude` no terminal WSL resolve para `claude.exe` do Windows.
-
-1. Configurar `/etc/wsl.conf` na distro:
-   ```bash
-   echo '[interop]' | sudo tee -a /etc/wsl.conf
-   echo 'appendWindowsPath = false' | sudo tee -a /etc/wsl.conf
-   ```
-2. Reiniciar a distro (PowerShell do Windows):
-   ```powershell
-   wsl --shutdown
-   ```
-3. Instalar o Claude CLI no WSL:
-   ```bash
-   npm install -g @anthropic-ai/claude-code
-   ```
-4. Rodar `bash setup.sh` dentro do WSL para configurar `~/.claude/` com paths Linux.
-
-Apos isso, `which claude` no WSL deve retornar `/usr/local/bin/claude` (nao `/mnt/c/...`).
-
-## Claude Desktop: abrir com backend WSL (launcher)
-
-O `setup.sh` (executado no Windows) gera `launch-claude-wsl.ps1` e o instala em
-`%LOCALAPPDATA%\Programs\`. Esse launcher:
-
-1. Abre um terminal WSL com `claude` rodando (o CLI WSL vira o worker da sessao).
-2. Abre o Claude Desktop app.
-
-**Como usar:**
-```powershell
-powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\launch-claude-wsl.ps1"
+```bash
+git clone https://github.com/im-alexandre/meus_mcps.git
 ```
 
-**Criar atalho no Desktop (uma vez, no PowerShell):**
-```powershell
-$ws = New-Object -ComObject WScript.Shell
-$sc = $ws.CreateShortcut("$env:USERPROFILE\Desktop\Claude (WSL).lnk")
-$sc.TargetPath = "powershell.exe"
-$sc.Arguments = "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$env:LOCALAPPDATA\Programs\launch-claude-wsl.ps1`""
-$sc.IconLocation = "$env:LOCALAPPDATA\Programs\Claude\Claude.exe"
-$sc.Save()
+Se ele ja existir, identifique o diretorio raiz real do clone. Esse diretorio sera o `REPO_ROOT`.
+
+### 2. Definir `AUTHORITATIVE_RULES_ROOT`
+
+Use:
+
+```text
+AUTHORITATIVE_RULES_ROOT = <REPO_ROOT>/ai-rules
 ```
 
-**Inicializacao automatica com Windows:** o `setup.sh` oferece registrar o launcher em
-`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` — o WSL claude inicia junto com
-o login do Windows.
+Exemplos:
 
-## Claude Desktop: MCPs via WSL (sessao sem worker local)
+- Windows: `D:/mcp/ai-rules`
+- WSL/Linux: `/mnt/d/mcp/ai-rules` ou `/home/<usuario>/meus_mcps/ai-rules`
 
-Quando o desktop inicia uma sessao sem um worker WSL rodando, os MCPs sao spawned
-a partir de `%APPDATA%\Claude\claude_desktop_config.json`. O `setup.sh` (Windows)
-configura esse arquivo com `wsl` como comando para cada servidor:
+### 3. Atualizar os stubs minimos
 
-```json
-{ "mcpServers": { "local-llm": { "command": "wsl", "args": ["python3", "/mnt/d/mcp/server_llm.py"] } } }
-```
+Copie os arquivos abaixo do repositório para os caminhos globais e substitua o valor padrao de `AUTHORITATIVE_RULES_ROOT` pelo path real do clone:
 
-Pre-requisito: rodar `bash setup.sh` dentro do WSL primeiro (instala `~/.ai/bin/autodev-codebase-mcp.sh`).
+- `AGENTS.minimal.md` -> `~/.codex/AGENTS.md`
+- `CLAUDE.minimal.md` -> `~/.claude/CLAUDE.md`
+
+Os arquivos globais devem continuar curtos. Nao mova regras longas para eles.
+
+## Passos do Codex
+
+### 4. Configurar `~/.codex/config.toml`
+
+Use `ai-rules/codex/codex_settings.toml` como template de referencia.
+
+Substitua manualmente os placeholders abaixo:
+
+- `{{REPO_ROOT}}`: diretorio raiz real do clone
+- `{{PYTHON_CMD}}`: binario Python que deve executar os servidores MCP
+- `{{AUTODEV_CMD}}`: comando usado para iniciar o `autodev-codebase`
+- `{{AUTODEV_ARGS}}`: lista TOML de argumentos do `autodev-codebase`
+- `{{CHROMA_DIR}}`: diretorio local onde o `scopus-search` armazenara o ChromaDB
+
+Secoes obrigatorias do Codex:
+
+- `[mcp_servers.autodev-codebase]`
+- `[mcp_servers.local-llm]`
+- `[mcp_servers.scopus-search]`
+- `[mcp_servers.docx-manager]`
+
+Secoes opcionais do Codex:
+
+- blocos `[mcp_servers.<nome>.tools.<tool>]` com `approval_mode`
+- `[mcp_servers.scopus-search.env]` se voce quiser explicitar `CHROMA_DIR`
+
+Se `~/.codex/config.toml` ja existir, faca merge preservando configuracoes nao relacionadas a estes MCPs.
+
+## Passos do Claude CLI
+
+### 5. Configurar `~/.claude/settings.json`
+
+Use `ai-rules/claude/claude_settings.json` como fonte de verdade.
+
+Substitua manualmente:
+
+- `{{REPO_ROOT}}` pelo diretorio raiz real do clone
+
+Se `~/.claude/settings.json` ja existir:
+
+- preserve chaves nao relacionadas
+- faca merge de `mcpServers` por nome
+- faca merge de `hooks.PreToolUse` sem duplicar `matcher`
+
+### 6. Configurar `~/.claude/mcp.json`
+
+Use `ai-rules/claude/mcp.json` como template.
+
+Substitua manualmente:
+
+- `{{REPO_ROOT}}`
+- `{{PYTHON_CMD}}`
+- `{{AUTODEV_CMD}}`
+- `{{AUTODEV_ARGS}}`
+
+Se `~/.claude/mcp.json` ja existir, faca merge preservando entradas nao relacionadas.
+
+### 7. Claude Desktop
+
+Qualquer configuracao especifica do Claude Desktop e opcional e nao faz parte do bootstrap obrigatorio do CLI.
+
+## Como resolver placeholders
+
+Defaults razoaveis quando o agente nao tiver outra informacao melhor:
+
+- Windows:
+  - `{{PYTHON_CMD}} = python`
+  - `{{AUTODEV_CMD}} = pwsh`
+  - `{{AUTODEV_ARGS}} = ["-File", "C:/Users/<usuario>/.ai/bin/autodev-codebase-mcp.ps1"]`
+- WSL/Linux:
+  - `{{PYTHON_CMD}} = python3`
+  - `{{AUTODEV_CMD}} = bash`
+  - `{{AUTODEV_ARGS}} = ["~/.ai/bin/autodev-codebase-mcp.sh"]`
+- `{{CHROMA_DIR}}`:
+  - Windows: `C:/Users/<usuario>/.codex/mcp/scopus/chroma`
+  - WSL/Linux: `~/.codex/mcp/scopus/chroma`
+
+Se o agente conhecer paths melhores do ambiente atual, deve usar o estado real da maquina.
+
+## Validacao final
+
+### Codex
+
+Confirme:
+
+- `~/.codex/AGENTS.md` existe
+- `~/.codex/AGENTS.md` aponta para `<REPO_ROOT>/ai-rules`
+- `~/.codex/config.toml` contem as secoes MCP obrigatorias
+
+### Claude
+
+Confirme:
+
+- `~/.claude/CLAUDE.md` existe
+- `~/.claude/CLAUDE.md` aponta para `<REPO_ROOT>/ai-rules`
+- `~/.claude/settings.json` e JSON valido
+- `~/.claude/mcp.json` e JSON valido, se o arquivo existir
+
+### Sanidade do repositório
+
+Confirme tambem:
+
+- `REPO_ROOT/ai-rules/codex/AGENTS.authoritative.md` existe
+- `REPO_ROOT/ai-rules/claude/CLAUDE.authoritative.md` existe
+- os caminhos de `server_llm.py`, `server_scopus.py` e `server_docx.py` usados nas configs existem de fato
 
 ## MCPs externos
 
-Os MCPs abaixo nao devem ser copiados de dumps locais. Eles devem ser instalados a partir dos repositorios oficiais.
+Os MCPs abaixo nao devem ser copiados de dumps locais. Instale a partir dos repositorios oficiais:
 
-- `autodev-codebase`: `https://github.com/anrgct/autodev-codebase`
-- `pdf-indexer`: `https://github.com/lizTheDeveloper/pdf-indexer-mcp`
+- `autodev-codebase`: https://github.com/anrgct/autodev-codebase
+- `pdf-indexer`: https://github.com/lizTheDeveloper/pdf-indexer-mcp
 
 Comandos textuais obrigatorios para a IA seguir durante a instalacao:
 
@@ -112,4 +170,4 @@ Comandos textuais obrigatorios para a IA seguir durante a instalacao:
 
 ## Atualizacoes futuras
 
-Quando o usuario pedir atualizacao global, leia `ai-rules/shared/global-config-update-policy.md` e siga esse fluxo.
+Quando o usuario pedir alteracao global de bootstrap, `AGENTS.md` ou `CLAUDE.md`, leia `ai-rules/shared/global-config-update-policy.md` antes de modificar os arquivos.
