@@ -1,32 +1,21 @@
-$ErrorActionPreference = "Stop"
-
 $codebaseCmd = (Get-Command codebase -ErrorAction Stop).Source
 
-function Resolve-GitRoot {
-    if ($env:CODEBASE_WORKSPACE) {
-        try {
-            return (Resolve-Path -LiteralPath $env:CODEBASE_WORKSPACE -ErrorAction Stop).Path
-        } catch {
-            throw "CODEBASE_WORKSPACE aponta para um path invalido: $($env:CODEBASE_WORKSPACE)"
-        }
-    }
+$workspacePath = if ($env:CODEBASE_WORKSPACE) { $env:CODEBASE_WORKSPACE }
+                 else { (& git rev-parse --show-toplevel 2>$null).Trim() }
+if (-not $workspacePath) { throw "Nao e um repositorio git." }
 
-    $gitRoot = & git rev-parse --show-toplevel 2>$null
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($gitRoot)) {
-        return $null
-    }
-
+$port = 3001
+while ($port -le 65535) {
     try {
-        return (Resolve-Path -LiteralPath $gitRoot.Trim() -ErrorAction Stop).Path
-    } catch {
-        throw "Nao foi possivel resolver a raiz git: $gitRoot"
-    }
+        $l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+        $l.Start(); $l.Stop(); break
+    } catch { $port++ }
 }
 
-$workspacePath = Resolve-GitRoot
-if (-not $workspacePath) {
-    throw "Nenhum repositorio git encontrado no diretorio atual; autodev-codebase nao sera iniciado."
-}
+Write-Host "autodev-codebase: porta $port"
 
-& $codebaseCmd "index" "--path=$workspacePath" "--log-level=error"
-& $codebaseCmd "stdio" "--server-url=http://localhost:3001/mcp" "--log-level=error"
+Start-Process $codebaseCmd `
+    -ArgumentList @("index", "--serve", "--host=127.0.0.1", "--port=$port", "--path=$workspacePath", "--log-level=error") `
+    -WindowStyle Hidden
+
+& $codebaseCmd "stdio" "--server-url=http://127.0.0.1:$port/mcp" "--log-level=error"

@@ -119,11 +119,11 @@ Defaults razoaveis quando o agente nao tiver outra informacao melhor:
 - Windows:
   - `{{PYTHON_CMD}} = python`
   - `{{AUTODEV_CMD}} = pwsh`
-  - `{{AUTODEV_ARGS}} = ["-File", "C:/Users/<usuario>/.ai/bin/autodev-codebase-mcp.ps1"]`
+  - `{{AUTODEV_ARGS}} = ["-NoLogo", "-NoProfile", "-File", "<REPO_ROOT>/scripts/autodev-codebase-current-git-mcp.ps1"]`
 - WSL/Linux:
   - `{{PYTHON_CMD}} = python3`
   - `{{AUTODEV_CMD}} = bash`
-  - `{{AUTODEV_ARGS}} = ["~/.ai/bin/autodev-codebase-mcp.sh"]`
+  - `{{AUTODEV_ARGS}} = ["<REPO_ROOT>/scripts/autodev-codebase-current-git-mcp.sh"]`
 - `{{CHROMA_DIR}}`:
   - Windows: `C:/Users/<usuario>/.codex/mcp/scopus/chroma`
   - WSL/Linux: `~/.codex/mcp/scopus/chroma`

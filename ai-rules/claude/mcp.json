@@ -1,11 +1,13 @@
 {
   "mcpServers": {
     "autodev-codebase": {
-      "command": "{{AUTODEV_CMD}}",
-      "args": {{AUTODEV_ARGS}},
-      "env": {
-        "CODEBASE_WORKSPACE": "${CLAUDE_PROJECT_DIR}"
-      }
+      "command": "pwsh",
+      "args": [
+        "-NoLogo",
+        "-NoProfile",
+        "-File",
+        "{{REPO_ROOT}}/scripts/autodev-codebase-current-git-mcp.ps1"
+      ]
     },
     "local-llm": {
       "command": "{{PYTHON_CMD}}",

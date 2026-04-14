@@ -65,12 +65,12 @@ AI_BIN="${HOME}/.ai/bin"
 if [[ "$OS" == "windows" ]]; then
   PWSH="$(command -v pwsh 2>/dev/null || echo 'C:/Program Files/PowerShell/7/pwsh.exe')"
   AUTODEV_CMD="$PWSH"
-  AUTODEV_ARGS="[\"-File\", \"$(cygpath -m "$AI_BIN" 2>/dev/null || echo "$AI_BIN")/autodev-codebase-mcp.ps1\"]"
-  AUTODEV_ARGS_TOML="[\"-File\", \"$(cygpath -m "$AI_BIN" 2>/dev/null || echo "$AI_BIN")/autodev-codebase-mcp.ps1\"]"
+  AUTODEV_ARGS="[\"-NoLogo\", \"-NoProfile\", \"-File\", \"$(cygpath -m "$REPO_ROOT" 2>/dev/null || echo "$REPO_ROOT")/scripts/autodev-codebase-current-git-mcp.ps1\"]"
+  AUTODEV_ARGS_TOML="[\"-NoLogo\", \"-NoProfile\", \"-File\", \"$(cygpath -m "$REPO_ROOT" 2>/dev/null || echo "$REPO_ROOT")/scripts/autodev-codebase-current-git-mcp.ps1\"]"
 else
   AUTODEV_CMD="bash"
-  AUTODEV_ARGS="[\"${AI_BIN}/autodev-codebase-mcp.sh\"]"
-  AUTODEV_ARGS_TOML="[\"${AI_BIN}/autodev-codebase-mcp.sh\"]"
+  AUTODEV_ARGS="[\"${REPO_ROOT}/scripts/autodev-codebase-current-git-mcp.sh\"]"
+  AUTODEV_ARGS_TOML="[\"${REPO_ROOT}/scripts/autodev-codebase-current-git-mcp.sh\"]"
 fi
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -234,20 +234,12 @@ SETTINGS_RESOLVED="$(resolve_template "$REPO_ROOT/ai-rules/claude/claude_setting
 echo -n "  settings.json: "
 merge_json "$SETTINGS_PATH" "$SETTINGS_RESOLVED"
 
-# ── Claude — .mcp.json (todos os MCPs incluindo autodev-codebase) ─────────────
+# ── Claude — ~/.claude.json (mcpServers globais — path oficial do Claude Code) ──
 
-MCP_PATH="$CLAUDE_DIR/.mcp.json"
+MCP_PATH="${HOME}/.claude.json"
 MCP_RESOLVED="$(resolve_template "$REPO_ROOT/ai-rules/claude/mcp.json")"
-echo -n "  .mcp.json: "
+echo -n "  ~/.claude.json (mcpServers): "
 merge_json "$MCP_PATH" "$MCP_RESOLVED"
-
-# ── Scripts de MCP (WSL/Linux) ────────────────────────────────────────────────
-
-if [[ "$OS" == "wsl" || "$OS" == "linux" ]]; then
-  cp "$REPO_ROOT/scripts/autodev-codebase-mcp.sh" "$AI_BIN/"
-  chmod +x "$AI_BIN/autodev-codebase-mcp.sh"
-  echo "  autodev-codebase-mcp.sh -> $AI_BIN/"
-fi
 
 # ── Codex ─────────────────────────────────────────────────────────────────────
 

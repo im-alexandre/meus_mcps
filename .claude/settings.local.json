@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/imale/.claude/**)",
+      "Bash(ls *)",
+      "Bash(python *)",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ]
+  }
+}

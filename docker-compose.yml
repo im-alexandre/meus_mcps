@@ -39,17 +39,5 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
 
-  autodev-codebase:
-    build:
-      context: .
-      dockerfile: docker/autodev-codebase/Dockerfile
-    container_name: autodev-codebase
-    restart: unless-stopped
-    depends_on:
-      - ollama
-      - qdrant
-    ports:
-      - "3001:3001"
-
 volumes:
   qdrant_storage:
