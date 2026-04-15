@@ -12,11 +12,30 @@ Quando `AUTHORITATIVE_RULES_ROOT` ainda nao existir no ambiente local, use o boo
 
 Nunca incluir linha `Co-Authored-By` em mensagens de commit.
 
+## Ordem de ferramentas de busca
+
+Para exploracao de codigo e estrutura de projeto:
+
+1. Se o repositório Git tiver um MCP de codigo configurado localmente, use-o primeiro.
+2. Se nao houver MCP de codigo local no projeto, use as ferramentas nativas de shell e leitura direta com parcimonia.
+3. Leia arquivos diretamente apenas quando o caminho ja estiver conhecido por contexto explicito do usuario, pela estrutura do repositorio ou por descoberta previa.
+4. Leia diretorios diretamente apenas quando isso for a forma mais curta e objetiva de confirmar o estado real do workspace.
+
+## Configuracao local por repositorio Git
+
+`autodev-codebase` nao deve ficar no `~/.codex/config.toml` global.
+
+Quando o projeto atual for um repositório Git e usar `autodev-codebase`, configure-o em `$repoRoot/.codex/config.toml`.
+
 ## DOCX
 
 Qualquer tarefa que leia, revise, valide, comente, cite, formate, renumere ou edite arquivo `.docx` deve ler `AUTHORITATIVE_RULES_ROOT/mcp/docx-manager.md` antes de prosseguir, mesmo que o MCP `docx-manager` ainda nao tenha sido chamado neste task.
 
 Se o `docx-manager` nao cobrir o caso, use `python-docx` como fallback. Se `python-docx` nao estiver disponivel, instale-o antes de continuar.
+
+## Refatoracao e extracao de codigo
+
+Ao mover ou extrair simbolos (funcoes, classes, constantes) para outros modulos, execute obrigatoriamente uma etapa de verificacao pos-extracao: para cada simbolo declarado como "movido", confirme que nao existe mais definicao no arquivo original. Sem essa verificacao, o arquivo fonte pode reter a definicao original enquanto o novo modulo tambem a define, causando shadowing silencioso ou residuos que quebram a refatoracao.
 
 ## Regras sob demanda
 
