@@ -1,18 +1,13 @@
 services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama-cuda
-    restart: unless-stopped
+  ollama-gpu:
+    image: ollama/ollama
+    container_name: ollama-gpu
     ports:
       - "11434:11434"
     environment:
-      OLLAMA_HOST: 0.0.0.0:11434
-      OLLAMA_DEBUG: INFO
-      OLLAMA_NUM_PARALLEL: "1"
-
-      OLLAMA_GPU_OVERHEAD: "1073741824" # 1.25 GiB
-
-      # OLLAMA_GPU_OVERHEAD: "1073741824" # 1 GiB
+      OLLAMA_NUM_PARALLEL: "2"
+      # OLLAMA_GPU_OVERHEAD: "1073741824" # 1.25 GiB
+      OLLAMA_GPU_OVERHEAD: "1073741824" # 1 GiB
       # OLLAMA_GPU_OVERHEAD: "1342177280" # 1.25 GiB
       # OLLAMA_GPU_OVERHEAD: "1610612736" # 1.5 GiB
       # OLLAMA_GPU_OVERHEAD: "1879048192" # 1.75 GiB
@@ -29,6 +24,20 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  ollama-cpu:
+    image: ollama/ollama
+    container_name: ollama-cpu
+    ports:
+      - "11435:11434"
+    volumes:
+      - type: bind
+        source: D:\ollama\models
+        target: /root/.ollama/models
+    environment:
+      OLLAMA_NUM_PARALLEL: "2"
+      CUDA_VISIBLE_DEVICES: "-1"
+
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant

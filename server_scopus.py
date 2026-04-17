@@ -6,6 +6,7 @@ from pathlib import Path
 
 import chromadb
 import ollama
+
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("scopus-search")
@@ -15,6 +16,8 @@ COLLECTION_NAME = "scopus"
 
 _client: chromadb.ClientAPI | None = None
 _collection: chromadb.Collection | None = None
+DEFAULT_OLLAMA_PORT = 11434
+_ollama_clients: dict[int, ollama.Client] = {}
 
 
 def _get_collection() -> chromadb.Collection:
@@ -32,8 +35,17 @@ MAX_EMBED_CHARS = 4000  # limite conservador para o modelo de embedding
 CHUNK_OVERLAP = 200
 
 
-def _embed(text: str) -> list[float]:
-    return ollama.embeddings(model="embeddinggemma", prompt=text)["embedding"]
+def _get_ollama_client(port: int = DEFAULT_OLLAMA_PORT) -> ollama.Client:
+    client = _ollama_clients.get(port)
+    if client is None:
+        client = ollama.Client(host=f"http://localhost:{port}")
+        _ollama_clients[port] = client
+    return client
+
+
+def _embed(text: str, port: int = DEFAULT_OLLAMA_PORT) -> list[float]:
+    client = _get_ollama_client(port)
+    return client.embeddings(model="embeddinggemma", prompt=text)["embedding"]
 
 
 def _split_chunks(text: str, max_chars: int = MAX_EMBED_CHARS, overlap: int = CHUNK_OVERLAP) -> list[str]:
@@ -53,7 +65,7 @@ def _split_chunks(text: str, max_chars: int = MAX_EMBED_CHARS, overlap: int = CH
 
 
 @mcp.tool()
-def index_csv(csv_path: str) -> str:
+def index_csv(csv_path: str, port: int = DEFAULT_OLLAMA_PORT) -> str:
     """Indexa um CSV Scopus no ChromaDB. Espera colunas: Title, Abstract, Author Keywords, Authors, Year, Source title, DOI."""
     col = _get_collection()
     path = Path(csv_path)
@@ -97,7 +109,7 @@ def index_csv(csv_path: str) -> str:
                 ids.append(chunk_id)
                 docs.append(chunk)
                 metas.append(meta)
-                embeddings.append(_embed(chunk))
+                embeddings.append(_embed(chunk, port=port))
                 chunks_total += 1
 
                 if len(ids) >= 50:
@@ -113,14 +125,14 @@ def index_csv(csv_path: str) -> str:
 
 
 @mcp.tool()
-def search(query: str, top_k: int = 5) -> list[dict]:
+def search(query: str, top_k: int = 5, port: int = DEFAULT_OLLAMA_PORT) -> list[dict]:
     """Busca semantica no indice Scopus. Retorna os top_k resultados mais relevantes."""
     col = _get_collection()
     if col.count() == 0:
         return [{"error": "Indice vazio. Execute index_csv primeiro."}]
 
     results = col.query(
-        query_embeddings=[_embed(query)],
+        query_embeddings=[_embed(query, port=port)],
         n_results=min(top_k, col.count()),
         include=["documents", "metadatas", "distances"],
     )

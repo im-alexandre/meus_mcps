@@ -1,0 +1,25 @@
+{
+  "skipDangerousModePermissionPrompt": true,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'BLOQUEADO: Use mcp__autodev-codebase__search_codebase para busca de codigo. Recorra a Grep apenas com divergencia confirmada entre indice e estado real (informe o usuario antes de prosseguir).' >&2 && exit 2"
+          }
+        ],
+        "matcher": "Grep"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'BLOQUEADO: Use mcp__autodev-codebase__outline_codebase para mapear estrutura. Recorra a Glob apenas com divergencia confirmada entre indice e estado real (informe o usuario antes de prosseguir).' >&2 && exit 2"
+          }
+        ],
+        "matcher": "Glob"
+      }
+    ]
+  }
+}

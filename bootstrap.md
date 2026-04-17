@@ -11,10 +11,10 @@ Use este documento quando o ambiente global do Codex ou do Claude ainda nao esti
 Ao final do bootstrap, o ambiente deve ter:
 
 - `~/.codex/AGENTS.md` apontando para o `AUTHORITATIVE_RULES_ROOT` real
-- `~/.codex/config.toml` com os MCPs do Codex configurados
+- `~/.codex/config.toml` com os MCPs globais do projeto, sem `autodev-codebase`
 - `~/.claude/CLAUDE.md` apontando para o `AUTHORITATIVE_RULES_ROOT` real
-- `~/.claude/settings.json` configurado a partir do template do repositório
-- `~/.claude/.mcp.json` configurado a partir do template do repositório, quando aplicavel
+- `~/.claude/settings.json` configurado a partir do template global do repositório
+- `~/.claude/.mcp.json` ou `~/.claude/mcp.json` configurado a partir do template global do repositório, quando aplicavel
 
 ## Fluxo unico
 
@@ -60,55 +60,53 @@ Substitua manualmente os placeholders abaixo:
 
 - `{{REPO_ROOT}}`: diretorio raiz real do clone
 - `{{PYTHON_CMD}}`: binario Python que deve executar os servidores MCP
-- `{{AUTODEV_CMD}}`: comando usado para iniciar o `autodev-codebase`
-- `{{AUTODEV_ARGS}}`: lista TOML de argumentos do `autodev-codebase`
 - `{{CHROMA_DIR}}`: diretorio local onde o `scopus-search` armazenara o ChromaDB
 
-Secoes obrigatorias do Codex:
+Secoes obrigatorias do Codex neste arquivo global:
 
-- `[mcp_servers.autodev-codebase]`
 - `[mcp_servers.local-llm]`
 - `[mcp_servers.scopus-search]`
 - `[mcp_servers.docx-manager]`
 
-Secoes opcionais do Codex:
+Se `~/.codex/config.toml` ja existir, faca merge preservando configuracoes nao relacionadas.
 
-- blocos `[mcp_servers.<nome>.tools.<tool>]` com `approval_mode`
-- `[mcp_servers.scopus-search.env]` se voce quiser explicitar `CHROMA_DIR`
-
-Se `~/.codex/config.toml` ja existir, faca merge preservando configuracoes nao relacionadas a estes MCPs.
+> **Importante**: `autodev-codebase` nao deve ficar no config global do Codex. Quando necessario, ele deve ser configurado localmente em `$repoRoot/.codex/config.toml`.
 
 ## Passos do Claude CLI
 
 ### 5. Configurar `~/.claude/settings.json`
 
-Use `ai-rules/claude/claude_settings.json` como fonte de verdade.
-
-Substitua manualmente:
-
-- `{{REPO_ROOT}}` pelo diretorio raiz real do clone
-
-> **Nota**: `claude_settings.json` contem apenas hooks (`PreToolUse`). Nao ha `mcpServers` neste arquivo — todos os MCPs ficam em `mcp.json` (passo 6).
+Use `ai-rules/claude/claude_settings.json` como fonte de verdade global.
 
 Se `~/.claude/settings.json` ja existir:
 
 - preserve chaves nao relacionadas
-- faca merge de `hooks.PreToolUse` sem duplicar `matcher`
+- faca merge sem duplicar entradas ja presentes
 
-### 6. Configurar `~/.claude/.mcp.json`
+### 6. Configurar `~/.claude/.mcp.json` ou `~/.claude/mcp.json`
 
-Use `ai-rules/claude/mcp.json` como template (o nome do arquivo de destino tem ponto: `.mcp.json`).
+Use `ai-rules/claude/mcp.json` como template global.
 
 Substitua manualmente:
 
 - `{{REPO_ROOT}}`
 - `{{PYTHON_CMD}}`
 
-> **Nota**: o servidor `autodev-codebase` ja usa `pwsh` com o script `scripts/autodev-codebase-current-git-mcp.ps1` — nao ha placeholders `{{AUTODEV_CMD}}` ou `{{AUTODEV_ARGS}}` no template.
+Se o arquivo global ja existir, faca merge preservando entradas nao relacionadas.
 
-Se `~/.claude/.mcp.json` ja existir, faca merge preservando entradas nao relacionadas.
+> **Importante**: `autodev-codebase` nao deve ficar no arquivo global do Claude. Quando necessario, ele deve ser configurado localmente em `$repoRoot/.mcp.json`.
 
-### 7. Claude Desktop
+## Configuracao local por repositorio Git
+
+Quando o projeto atual for um repositorio Git e usar `autodev-codebase`, a configuracao deve ser criada no proprio repositorio:
+
+- Codex: `$repoRoot/.codex/config.toml`
+- Claude MCP: `$repoRoot/.mcp.json`
+- Claude hooks: `$repoRoot/.claude/settings.json`
+
+Se voce usa wrappers locais no PowerShell para `codex` e `claude`, esses arquivos podem ser materializados automaticamente ao entrar no repositorio e iniciar o cliente.
+
+## Claude Desktop
 
 Qualquer configuracao especifica do Claude Desktop e opcional e nao faz parte do bootstrap obrigatorio do CLI.
 
@@ -118,12 +116,8 @@ Defaults razoaveis quando o agente nao tiver outra informacao melhor:
 
 - Windows:
   - `{{PYTHON_CMD}} = python`
-  - `{{AUTODEV_CMD}} = pwsh`
-  - `{{AUTODEV_ARGS}} = ["-NoLogo", "-NoProfile", "-File", "<REPO_ROOT>/scripts/autodev-codebase-current-git-mcp.ps1"]`
 - WSL/Linux:
   - `{{PYTHON_CMD}} = python3`
-  - `{{AUTODEV_CMD}} = bash`
-  - `{{AUTODEV_ARGS}} = ["<REPO_ROOT>/scripts/autodev-codebase-current-git-mcp.sh"]`
 - `{{CHROMA_DIR}}`:
   - Windows: `C:/Users/<usuario>/.codex/mcp/scopus/chroma`
   - WSL/Linux: `~/.codex/mcp/scopus/chroma`
@@ -138,7 +132,7 @@ Confirme:
 
 - `~/.codex/AGENTS.md` existe
 - `~/.codex/AGENTS.md` aponta para `<REPO_ROOT>/ai-rules`
-- `~/.codex/config.toml` contem as secoes MCP obrigatorias
+- `~/.codex/config.toml` contem as secoes MCP globais esperadas
 
 ### Claude
 
@@ -147,7 +141,15 @@ Confirme:
 - `~/.claude/CLAUDE.md` existe
 - `~/.claude/CLAUDE.md` aponta para `<REPO_ROOT>/ai-rules`
 - `~/.claude/settings.json` e JSON valido
-- `~/.claude/.mcp.json` e JSON valido, se o arquivo existir
+- `~/.claude/.mcp.json` ou `~/.claude/mcp.json` e JSON valido, se o arquivo existir
+
+### Repositorios Git com autodev-codebase
+
+Quando o usuario estiver em um repositorio Git e quiser `autodev-codebase`, confirme tambem:
+
+- `$repoRoot/.codex/config.toml` existe
+- `$repoRoot/.mcp.json` existe
+- `$repoRoot/.claude/settings.json` existe
 
 ### Sanidade do repositório
 

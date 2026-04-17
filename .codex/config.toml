@@ -1,0 +1,13 @@
+# BEGIN autodev-codebase managed block
+[mcp_servers.autodev-codebase]
+url = "http://127.0.0.1:3003/mcp"
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+enabled = true
+
+[mcp_servers.autodev-codebase.tools.outline_codebase]
+approval_mode = "approve"
+
+[mcp_servers.autodev-codebase.tools.search_codebase]
+approval_mode = "approve"
+# END autodev-codebase managed block

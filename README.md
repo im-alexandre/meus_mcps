@@ -99,10 +99,11 @@ O `bootstrap.md` e o procedimento canônico. Ele cobre:
 
 - descoberta do `REPO_ROOT`
 - atualizacao de `~/.codex/AGENTS.md`
-- atualizacao de `~/.codex/config.toml`
+- atualizacao de `~/.codex/config.toml` para MCPs globais sem `autodev-codebase`
 - atualizacao de `~/.claude/CLAUDE.md`
 - atualizacao de `~/.claude/settings.json`
-- atualizacao de `~/.claude/mcp.json`, quando aplicavel
+- atualizacao de `~/.claude/.mcp.json` ou `~/.claude/mcp.json`, quando aplicavel
+- orientacao para configuracao local por repositorio Git quando `autodev-codebase` for usado
 
 ## Templates de configuracao
 
@@ -149,22 +150,15 @@ npm install
 npm run build
 ```
 
-Depois inicie em segundo plano:
+A configuração recomendada agora é **local por repositório Git**, não global:
 
-**Bash:**
+- Codex: `$repoRoot/.codex/config.toml`
+- Claude MCP: `$repoRoot/.mcp.json`
+- Claude hooks: `$repoRoot/.claude/settings.json`
 
-```bash
+Se você usa wrappers locais para `codex` e `claude` no PowerShell, esses arquivos podem ser gerados automaticamente no repositório a partir da URL HTTP do servidor MCP iniciada para aquele projeto.
 
-codebase index --serve --port 3001 --path=D:\dissertação > /dev/null 2>&1 &
-```
-
-**PowerShell:**
-
-```powershell
-Start-Process -FilePath "node" -ArgumentList "codebase index --serve --port 3001 --path=D:\dissertação " -WindowStyle Hidden
-```
-
-Adicione o servidor ao seu cliente MCP apontando para o mesmo `dist/index.js`.
+Sem esses wrappers, você ainda pode iniciar o servidor manualmente e apontar o cliente MCP para a URL/stdio correspondente.
 
 ---
 

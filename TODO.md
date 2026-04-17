@@ -6,27 +6,14 @@ Specs derivadas das capacidades descritas no README e do estado atual de `server
 
 ## 1. Executar instruções arbitrárias de comentários
 
-**Contexto**
-O README descreve que qualquer instrução deixada como comentário no Word — "reescrever", "resumir", "traduzir", além de "citar" — deve ser lida, executada e devolvida como novo comentário. Hoje só existe `find_citar_paragraphs`, que filtra especificamente pelo texto `"citar"`.
+**Status**
+Implementado.
 
-**Comportamento desejado**
+**Estado atual**
 
-Ler comentários com qualquer instrução em linguagem natural, executar o comando indicado no trecho comentado e responder o comentário com `"implementado"` em caso de sucesso ou com uma descrição breve do erro ou motivo que impediu a implementação.
-
-**Spec**
-
-Criar tool `find_instruction_paragraphs(doc_path: str) -> list[dict]`:
-- Lê todos os comentários via `_get_comments(doc_path)`
-- Para cada comentário cujo texto **não** seja `"citar"` (case-insensitive), localiza o parágrafo associado via `commentRangeStart` (mesmo padrão de `find_citar_paragraphs`)
-- Retorna lista com `paragraph_index`, `text` (até 500 chars), `comment_id`, `instruction` (texto do comentário)
-
-O campo `instruction` é o que o agente AI deve interpretar e executar sobre o trecho.
-
-Criar tool `reply_comment(doc_path: str, output_path: str, comment_id: str, reply_text: str) -> str`:
-- Insere uma resposta ao comentário `comment_id` no formato de thread OOXML (`<w15:commentEx>` com `paraIdParent`)
-- `reply_text` será `"implementado"` em caso de sucesso ou uma mensagem curta descrevendo o erro/impedimento
-- Requer acesso direto ao XML via ZipFile/lxml (investigar se `python-docx` expõe threads de comentário; caso contrário, manipular `word/comments.xml` e `word/commentsExtended.xml` diretamente)
-- Salva em `output_path`
+- `list_comments(doc_path)` lista todos os comentários em árvore, com `replies`, `paragraph_index` e `paragraph_text` quando o vínculo com o documento pode ser resolvido.
+- Reações 👍 são tratadas como `resolved=True` na leitura dos comentários.
+- `reply_comment(doc_path, comment_id, reply_text, output_path="")` insere respostas em thread OOXML.
 
 ---
 

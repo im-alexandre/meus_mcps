@@ -27,6 +27,8 @@ PAIR_EQ_REF_RE = re.compile(r"\b(?:Equações|eqs\.)\s*\((\d+)\)\s*e\s*\((\d+)\)
 TABLE_CAPTION_RE = re.compile(r'^Tabela\s+\d+\s+[–-]\s+.+')
 TABLE_NUM_RE = re.compile(r'^(Tabela\s+)(\d+)(\s+[–-]\s+.+)')
 SINGLE_TABLE_REF_RE = re.compile(r'\bTabela\s+(\d+)\b', re.IGNORECASE)
+FIGURE_CAPTION_RE = re.compile(r'^Figura\s+\d+\s+[–-]\s+.+')
+SOURCE_TEXT_RE = re.compile(r'^Fonte:\s+.+')
 
 W14_NS = "http://schemas.microsoft.com/office/word/2010/wordml"
 W15_NS = "http://schemas.microsoft.com/office/word/2012/wordml"
@@ -42,18 +44,124 @@ CT_COMMENTS_EXTENDED = "application/vnd.openxmlformats-officedocument.wordproces
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _get_comments(doc_path: str) -> list[dict]:
-    """Extrai comentarios do DOCX via python-docx API."""
-    doc = Document(doc_path)
-    return [
-        {"id": str(c.comment_id), "author": c.author, "text": c.text.strip()}
-        for c in doc.comments
+def _comment_text_from_element(comment_elm) -> str:
+    paragraphs = []
+    for para in comment_elm.findall(f"{{{W_NS}}}p"):
+        parts = [
+            node.text
+            for node in para.iter()
+            if getattr(node, "tag", None) == qn("w:t") and node.text
+        ]
+        if parts:
+            paragraphs.append("".join(parts))
+    return "\n".join(paragraphs).strip()
+
+
+def _comment_para_ids_from_element(comment_elm) -> list[str]:
+    comment_para_id = (
+        comment_elm.get(qn("w14:paraId"))
+        or comment_elm.get(f"{{{W14_NS}}}paraId")
+        or comment_elm.get(f"{{{W_NS}}}paraId")
+        or comment_elm.get("paraId")
+    )
+    paragraph_para_ids = [
+        para.get(f"{{{W14_NS}}}paraId")
+        for para in comment_elm.findall(f"{{{W_NS}}}p")
+        if para.get(f"{{{W14_NS}}}paraId")
     ]
 
+    ordered_ids = []
+    for para_id in [comment_para_id, *reversed(paragraph_para_ids), *paragraph_para_ids]:
+        if para_id and para_id not in ordered_ids:
+            ordered_ids.append(para_id)
+    return ordered_ids
 
-def _get_comment_para_ids(doc_path: str) -> dict:
-    """Retorna {paraId: {"done": bool, "paraIdParent": str|None}} de commentsExtended.xml."""
+
+def _extract_comments(doc: Document) -> list[dict]:
+    """Extrai comentarios do DOCX com metadados de thread e resolucao."""
+    doc_part = doc.part
+    try:
+        comments_elm = doc_part._comments_part.element
+    except (AttributeError, KeyError):
+        return []
+    thread_info = _get_comment_thread_info(doc)
+    comment_targets = _get_comment_targets(doc)
+
+    comments = []
+    by_id = {}
+    parent_para_ids = {}
+    para_to_cid = {}
+
+    for comment_elm in comments_elm.findall(qn("w:comment")):
+        comment_id = comment_elm.get(qn("w:id"), "")
+        para_ids = _comment_para_ids_from_element(comment_elm)
+        matched_para_id = next((para_id for para_id in para_ids if para_id in thread_info), "")
+        if not matched_para_id and para_ids:
+            matched_para_id = para_ids[0]
+
+        comment = {
+            "id": comment_id,
+            "author": comment_elm.get(qn("w:author"), ""),
+            "date": comment_elm.get(qn("w:date"), ""),
+            "text": _comment_text_from_element(comment_elm),
+            "para_id": matched_para_id,
+            "resolved": thread_info.get(matched_para_id, {}).get("resolved", False),
+            "parent_id": None,
+            "children_ids": [],
+        }
+        if comment_id in comment_targets:
+            comment.update(comment_targets[comment_id])
+        comments.append(comment)
+        by_id[comment_id] = comment
+        parent_para_ids[comment_id] = thread_info.get(matched_para_id, {}).get("paraIdParent")
+
+        for para_id in para_ids:
+            para_to_cid.setdefault(para_id, comment_id)
+
+    for comment in comments:
+        parent_para_id = parent_para_ids.get(comment["id"])
+        parent_id = para_to_cid.get(parent_para_id)
+        if not parent_id or parent_id == comment["id"]:
+            continue
+        comment["parent_id"] = parent_id
+        by_id[parent_id]["children_ids"].append(comment["id"])
+
+    for comment in comments:
+        _inherit_comment_target(comment, by_id)
+
+    return comments
+
+
+def _build_comment_tree(comments: list[dict]) -> list[dict]:
+    node_by_id = {
+        comment["id"]: {
+            **comment,
+            "replies": [],
+        }
+        for comment in comments
+    }
+    roots = []
+
+    for comment in comments:
+        node = node_by_id[comment["id"]]
+        parent_id = comment.get("parent_id")
+        if parent_id and parent_id in node_by_id:
+            node_by_id[parent_id]["replies"].append(node)
+        else:
+            roots.append(node)
+
+    return roots
+
+
+def _get_comments(doc_path: str) -> list[dict]:
+    """Extrai comentarios do DOCX com metadados de thread e resolucao."""
     doc = Document(doc_path)
+    return _extract_comments(doc)
+
+
+def _get_comment_para_ids(doc_or_path) -> dict:
+    """Retorna {paraId: {"done": bool, "paraIdParent": str|None}} de commentsExtended.xml."""
+    doc = doc_or_path if hasattr(doc_or_path, "part") else Document(doc_or_path)
     try:
         ext_part = doc.part.part_related_by(RT_COMMENTS_EXTENDED)
     except KeyError:
@@ -68,32 +176,35 @@ def _get_comment_para_ids(doc_path: str) -> dict:
     return result
 
 
-def _get_comment_situations(doc_path: str) -> dict:
-    """Retorna {comment_id: resolved} mapeando ID visivel do comentario ao status resolvido."""
-    doc = Document(doc_path)
-    doc_part = doc.part
+def _get_comment_thread_info(doc_or_path) -> dict:
+    """Combina commentsExtended.xml e reacoes 👍 para definir o estado real do comentario."""
+    doc = doc_or_path if hasattr(doc_or_path, "part") else Document(doc_or_path)
+    info = {
+        para_id: {
+            "done": values.get("done", False),
+            "paraIdParent": values.get("paraIdParent"),
+            "thumbsup": False,
+            "resolved": values.get("done", False),
+        }
+        for para_id, values in _get_comment_para_ids(doc).items()
+    }
 
-    # Build paraId -> done from commentsExtended.xml
-    try:
-        ext_part = doc_part.part_related_by(RT_COMMENTS_EXTENDED)
-    except KeyError:
-        return {}
-    tree = etree.fromstring(ext_part.blob)
-    para_done = {}
-    for ex in tree.findall(f"{{{W15_NS}}}commentEx"):
-        pid = ex.get(f"{{{W15_NS}}}paraId", "")
-        para_done[pid] = ex.get(f"{{{W15_NS}}}done", "0") == "1"
+    for para_id in _get_thumbsup_para_ids(doc.part):
+        entry = info.setdefault(
+            para_id,
+            {
+                "done": False,
+                "paraIdParent": None,
+                "thumbsup": False,
+                "resolved": False,
+            },
+        )
+        entry["thumbsup"] = True
 
-    # Build paraId -> comment_id from comments.xml
-    comments_elm = doc_part._comments_part.element
-    para_to_cid = {}
-    for c in comments_elm.findall(qn("w:comment")):
-        para = c.find(f".//{{{W_NS}}}p")
-        pid = para.get(f"{{{W14_NS}}}paraId") if para is not None else ""
-        if pid:
-            para_to_cid[pid] = c.get(qn("w:id"))
+    for values in info.values():
+        values["resolved"] = values.get("done", False) or values.get("thumbsup", False)
 
-    return {cid: para_done.get(pid, False) for pid, cid in para_to_cid.items()}
+    return info
 
 
 def _get_thumbsup_para_ids(doc_part) -> set:
@@ -124,6 +235,45 @@ def _get_thumbsup_para_ids(doc_part) -> set:
             if para_id:
                 thumbsup.add(para_id)
     return thumbsup
+
+
+def _get_comment_targets(doc: Document) -> dict[str, dict]:
+    ns = {"w": W_NS}
+    targets = {}
+    for paragraph_index, paragraph in enumerate(doc.paragraphs):
+        starts = paragraph._element.findall(".//w:commentRangeStart", ns)
+        for start in starts:
+            comment_id = start.get(qn("w:id"))
+            if not comment_id:
+                continue
+            targets.setdefault(
+                comment_id,
+                {
+                    "paragraph_index": paragraph_index,
+                    "paragraph_text": _get_paragraph_text(paragraph)[:500],
+                },
+            )
+    return targets
+
+
+def _inherit_comment_target(comment: dict, by_id: dict, seen: set | None = None) -> None:
+    if "paragraph_index" in comment and "paragraph_text" in comment:
+        return
+    parent_id = comment.get("parent_id")
+    if not parent_id or parent_id not in by_id:
+        return
+
+    if seen is None:
+        seen = set()
+    if comment["id"] in seen:
+        return
+    seen.add(comment["id"])
+
+    parent = by_id[parent_id]
+    _inherit_comment_target(parent, by_id, seen)
+    if "paragraph_index" in parent and "paragraph_text" in parent:
+        comment["paragraph_index"] = parent["paragraph_index"]
+        comment["paragraph_text"] = parent["paragraph_text"]
 
 
 def _get_paragraph_text(para) -> str:
@@ -204,6 +354,13 @@ def _get_body_children(doc: Document):
     return list(doc._body._element)
 
 
+def _get_paragraph_by_element(doc: Document, element):
+    for paragraph in doc.paragraphs:
+        if paragraph._element is element:
+            return paragraph
+    return None
+
+
 def _paragraph_text_from_element(element) -> str:
     parts = []
     for node in element.iter():
@@ -212,57 +369,173 @@ def _paragraph_text_from_element(element) -> str:
     return "".join(parts).strip()
 
 
-def _get_table_caption(doc: Document, table) -> str:
+def _find_adjacent_nonempty_paragraph(doc: Document, body_element, position: str):
     children = _get_body_children(doc)
-    table_el = table._element
-    child_idx = children.index(table_el)
+    child_idx = children.index(body_element)
+    if position == "above":
+        indices = range(child_idx - 1, -1, -1)
+    else:
+        indices = range(child_idx + 1, len(children))
 
-    for idx in range(child_idx - 1, -1, -1):
+    for idx in indices:
         element = children[idx]
-        if element.tag == qn("w:p"):
-            text = _paragraph_text_from_element(element)
-            if text:
-                return text
-    return ""
-
-
-def _get_table_caption_paragraph(doc: Document, table):
-    children = _get_body_children(doc)
-    table_el = table._element
-    child_idx = children.index(table_el)
-
-    for idx in range(child_idx - 1, -1, -1):
-        element = children[idx]
-        if element.tag == qn("w:p"):
-            text = _paragraph_text_from_element(element)
-            if text:
-                for paragraph in doc.paragraphs:
-                    if paragraph._element is element:
-                        return paragraph
-                return None
+        if element.tag != qn("w:p"):
+            continue
+        text = _paragraph_text_from_element(element)
+        if text:
+            return _get_paragraph_by_element(doc, element)
     return None
 
 
-def _set_table_caption(doc: Document, table, caption_text: str) -> None:
-    existing = _get_table_caption_paragraph(doc, table)
-    if existing is not None and TABLE_CAPTION_RE.match(_get_paragraph_full_text(existing).strip()):
-        if existing.runs:
-            existing.runs[0].text = caption_text
-            for run in existing.runs[1:]:
-                run.text = ""
-        else:
-            existing.add_run(caption_text)
-        for run in existing.runs:
-            _set_run_font(run, font_name="Times New Roman", font_size=10, bold=False)
+def _replace_paragraph_text_content(paragraph, text: str) -> None:
+    if paragraph.runs:
+        paragraph.runs[0].text = text
+        for run in paragraph.runs[1:]:
+            run.text = ""
         return
+    paragraph.add_run(text)
 
-    p = OxmlElement("w:p")
-    r = OxmlElement("w:r")
-    t = OxmlElement("w:t")
-    t.text = caption_text
-    r.append(t)
-    p.append(r)
-    table._element.addprevious(p)
+
+def _insert_paragraph_relative(
+    doc: Document,
+    body_element,
+    text: str,
+    position: str,
+    font_name: str = "Times New Roman",
+    font_size: int = 10,
+):
+    paragraph = doc.add_paragraph()
+    paragraph.add_run(text)
+    _set_paragraph_font(paragraph, font_name=font_name, font_size=font_size)
+    new_element = paragraph._element
+    body_element.getparent().remove(new_element)
+    if position == "above":
+        body_element.addprevious(new_element)
+    else:
+        body_element.addnext(new_element)
+    return paragraph
+
+
+def _set_adjacent_paragraph_text(
+    doc: Document,
+    body_element,
+    text: str,
+    position: str,
+    matcher,
+    font_name: str = "Times New Roman",
+    font_size: int = 10,
+):
+    existing = _find_adjacent_nonempty_paragraph(doc, body_element, position)
+    if existing is not None and matcher(_get_paragraph_full_text(existing).strip()):
+        _replace_paragraph_text_content(existing, text)
+        _set_paragraph_font(existing, font_name=font_name, font_size=font_size)
+        return existing
+    return _insert_paragraph_relative(
+        doc,
+        body_element,
+        text,
+        position,
+        font_name=font_name,
+        font_size=font_size,
+    )
+
+
+def _normalize_caption_text(label: str, number: int, caption_text: str) -> str:
+    normalized = caption_text.strip()
+    if label == "Tabela" and TABLE_CAPTION_RE.match(normalized):
+        return normalized
+    if label == "Figura" and FIGURE_CAPTION_RE.match(normalized):
+        return normalized
+    return f"{label} {number} – {normalized}"
+
+
+def _normalize_source_text(source_text: str) -> str:
+    normalized = source_text.strip()
+    if not normalized:
+        return f"Fonte: Autor ({datetime.datetime.now().year})"
+    if SOURCE_TEXT_RE.match(normalized):
+        return normalized
+    return f"Fonte: {normalized}"
+
+
+def _get_table_caption(doc: Document, table) -> str:
+    paragraph = _get_table_caption_paragraph(doc, table)
+    if paragraph is None:
+        return ""
+    return _get_paragraph_full_text(paragraph).strip()
+
+
+def _get_table_caption_paragraph(doc: Document, table):
+    return _find_adjacent_nonempty_paragraph(doc, table._element, "above")
+
+
+def _set_table_caption(doc: Document, table, caption_text: str) -> None:
+    _set_adjacent_paragraph_text(
+        doc,
+        table._element,
+        caption_text,
+        "above",
+        lambda text: bool(TABLE_CAPTION_RE.match(text)),
+    )
+
+
+def _set_table_source(doc: Document, table, source_text: str) -> None:
+    _set_adjacent_paragraph_text(
+        doc,
+        table._element,
+        source_text,
+        "below",
+        lambda text: bool(SOURCE_TEXT_RE.match(text)),
+    )
+
+
+def _get_inline_figures(doc: Document) -> list[dict]:
+    figures = []
+    for paragraph_index, paragraph in enumerate(doc.paragraphs):
+        if _paragraph_is_in_table(paragraph):
+            continue
+        drawing_count = sum(
+            1
+            for node in paragraph._element.iter()
+            if getattr(node, "tag", None) == qn("w:drawing")
+        )
+        for _ in range(drawing_count):
+            figures.append(
+                {
+                    "figure_number": len(figures) + 1,
+                    "paragraph_index": paragraph_index,
+                    "paragraph": paragraph,
+                }
+            )
+    return figures
+
+
+def _get_figure_entry(doc: Document, figure_number: int) -> tuple[dict | None, int]:
+    figures = _get_inline_figures(doc)
+    total = len(figures)
+    if figure_number < 1 or figure_number > total:
+        return None, total
+    return figures[figure_number - 1], total
+
+
+def _set_figure_caption(doc: Document, paragraph, caption_text: str) -> None:
+    _set_adjacent_paragraph_text(
+        doc,
+        paragraph._element,
+        caption_text,
+        "above",
+        lambda text: bool(FIGURE_CAPTION_RE.match(text)),
+    )
+
+
+def _set_figure_source(doc: Document, paragraph, source_text: str) -> None:
+    _set_adjacent_paragraph_text(
+        doc,
+        paragraph._element,
+        source_text,
+        "below",
+        lambda text: bool(SOURCE_TEXT_RE.match(text)),
+    )
 
 
 def _cell_border_sides(cell_el) -> set[str]:
@@ -652,19 +925,8 @@ def list_paragraphs(doc_path: str) -> list[dict]:
 
 @mcp.tool()
 def list_comments(doc_path: str) -> list[dict]:
-    """Lista todos os comentarios do DOCX."""
-    return _get_comments(doc_path)
-
-
-@mcp.tool()
-def get_situation(doc_path: str, comment_id: str = "") -> dict:
-    """Retorna se um comentario esta resolvido ou nao. Se comment_id for omitido, retorna todos."""
-    situations = _get_comment_situations(doc_path)
-    if comment_id:
-        if comment_id not in situations:
-            return {"error": f"Comentario {comment_id} nao encontrado."}
-        return {"id": comment_id, "resolved": situations[comment_id]}
-    return [{"id": cid, "resolved": resolved} for cid, resolved in situations.items()]
+    """Lista comentarios do DOCX em arvore, com respostas aninhadas em `replies`."""
+    return _build_comment_tree(_get_comments(doc_path))
 
 
 @mcp.tool()
@@ -700,68 +962,6 @@ def report_tables_format(doc_path: str) -> list[str]:
 
 
 @mcp.tool()
-def find_citar_paragraphs(doc_path: str) -> list[dict]:
-    """Encontra paragrafos que possuem comentario 'citar'. Retorna indice + texto do paragrafo."""
-    doc = Document(doc_path)
-    comments = _get_comments(doc_path)
-    citar_ids = {c["id"] for c in comments if c["text"].strip().lower() == "citar"}
-
-    if not citar_ids:
-        return [{"info": "Nenhum comentario 'citar' encontrado."}]
-
-    # Mapear commentRangeStart no XML do documento
-    body = doc.element.body
-    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-    results = []
-
-    for para_idx, para in enumerate(doc.paragraphs):
-        para_xml = para._element
-        starts = para_xml.findall(".//w:commentRangeStart", ns)
-        for s in starts:
-            cid = s.get(f'{{{ns["w"]}}}id')
-            if cid in citar_ids:
-                results.append({
-                    "paragraph_index": para_idx,
-                    "text": _get_paragraph_text(para)[:500],
-                    "comment_id": cid,
-                })
-
-    return results if results else [{"info": "Nenhum paragrafo marcado com 'citar'."}]
-
-
-@mcp.tool()
-def find_instruction_paragraphs(doc_path: str) -> list[dict]:
-    """Encontra paragrafos com comentarios de instrucao (qualquer texto exceto 'citar')."""
-    doc = Document(doc_path)
-    comments = _get_comments(doc_path)
-    instruction_ids = {
-        c["id"]: c["text"]
-        for c in comments
-        if c["text"].strip().lower() != "citar"
-    }
-
-    if not instruction_ids:
-        return [{"info": "Nenhum comentario de instrucao encontrado."}]
-
-    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-    results = []
-
-    for para_idx, para in enumerate(doc.paragraphs):
-        starts = para._element.findall(".//w:commentRangeStart", ns)
-        for s in starts:
-            cid = s.get(f'{{{ns["w"]}}}id')
-            if cid in instruction_ids:
-                results.append({
-                    "paragraph_index": para_idx,
-                    "text": _get_paragraph_text(para)[:500],
-                    "comment_id": cid,
-                    "instruction": instruction_ids[cid],
-                })
-
-    return results if results else [{"info": "Nenhum paragrafo com instrucao encontrado."}]
-
-
-@mcp.tool()
 def reply_comment(
     doc_path: str,
     comment_id: str,
@@ -780,6 +980,7 @@ def reply_comment(
 
     doc = Document(doc_path)
     doc_part = doc.part
+    comments = _extract_comments(doc)
 
     # Access comments.xml via CommentsPart (lxml element, auto-serialized on save)
     comments_elm = doc_part._comments_part.element
@@ -792,10 +993,18 @@ def reply_comment(
         max_id = max(max_id, int(cid))
         if cid == comment_id:
             parent_comment = c
-            parent_para_id = c.get(qn("w14:paraId")) or c.get(f"{{{W_NS}}}paraId") or c.get("paraId", "")
+            parent_info = next((comment for comment in comments if comment["id"] == cid), None)
+            parent_para_id = parent_info["para_id"] if parent_info else None
 
     if parent_comment is None:
         return f"Comentario {comment_id} nao encontrado."
+
+    if not parent_para_id:
+        parent_para_id = secrets.token_hex(4).upper()
+        parent_comment.set(f"{{{w14}}}paraId", parent_para_id)
+        parent_paragraphs = parent_comment.findall(f"{{{W_NS}}}p")
+        if parent_paragraphs:
+            parent_paragraphs[-1].set(f"{{{w14}}}paraId", parent_para_id)
 
     new_id = str(max_id + 1)
     new_para_id = secrets.token_hex(4).upper()
@@ -808,7 +1017,7 @@ def reply_comment(
     new_comment.set(qn("w:date"), now)
     new_comment.set(f"{{{w14}}}paraId", new_para_id)
     new_p = etree.SubElement(new_comment, qn("w:p"))
-    new_p.set(f"{{{w14}}}paraId", secrets.token_hex(4).upper())
+    new_p.set(f"{{{w14}}}paraId", new_para_id)
     new_r = etree.SubElement(new_p, qn("w:r"))
     new_t = etree.SubElement(new_r, qn("w:t"))
     new_t.text = reply_text
@@ -878,43 +1087,36 @@ def remove_resolved_comments(doc_path: str, output_path: str = "") -> str:
 
     doc = Document(doc_path)
     doc_part = doc.part
-
-    # Access commentsExtended.xml via OPC
-    try:
-        ext_part = doc_part.part_related_by(RT_EXT)
-    except KeyError:
-        return "0 comentarios resolvidos removidos (commentsExtended.xml ausente)."
-
-    ext_tree = etree.fromstring(ext_part.blob)
-
-    # Build para_info: {paraId: {done, parent}}
-    para_info = {}
-    for ex in ext_tree.findall(f"{{{w15}}}commentEx"):
-        pid = ex.get(f"{{{w15}}}paraId", "")
-        para_info[pid] = {
-            "done": ex.get(f"{{{w15}}}done", "0") == "1",
-            "parent": ex.get(f"{{{w15}}}paraIdParent"),
-        }
-
-    # Tratar comentarios com 👍 como resolvidos
-    thumbsup_ids = _get_thumbsup_para_ids(doc_part)
-    for pid in thumbsup_ids:
-        if pid in para_info:
-            para_info[pid]["done"] = True
-
-    if not any(info["done"] for info in para_info.values()):
+    thread_info = _get_comment_thread_info(doc)
+    if not any(info.get("resolved") for info in thread_info.values()):
         return "0 comentarios resolvidos removidos."
 
+    try:
+        ext_part = doc_part.part_related_by(RT_EXT)
+        ext_tree = etree.fromstring(ext_part.blob)
+    except KeyError:
+        ext_part = None
+        ext_tree = None
+
+    # Build para_info: {paraId: {resolved, parent}}
+    para_info = {
+        pid: {
+            "resolved": info.get("resolved", False),
+            "parent": info.get("paraIdParent"),
+        }
+        for pid, info in thread_info.items()
+    }
+
     # Map paraId -> comment_id from comments.xml
-    # paraId is on the child <w:p> paragraph inside the comment, not on <w:comment> itself
-    comments_elm = doc_part._comments_part.element
-    W14_NS = "http://schemas.microsoft.com/office/word/2010/wordml"
+    try:
+        comments_elm = doc_part._comments_part.element
+    except (AttributeError, KeyError):
+        return "0 comentarios resolvidos removidos."
     para_to_cid = {}
     for c in comments_elm.findall(qn("w:comment")):
-        para = c.find(f".//{{{W_NS}}}p")
-        pid = para.get(f"{{{W14_NS}}}paraId") if para is not None else ""
-        if pid:
-            para_to_cid[pid] = c.get(qn("w:id"))
+        cid = c.get(qn("w:id"))
+        for pid in _comment_para_ids_from_element(c):
+            para_to_cid.setdefault(pid, cid)
 
     # Group threads: parent_paraId -> [child_paraIds]
     threads = {}
@@ -929,7 +1131,7 @@ def remove_resolved_comments(doc_path: str, output_path: str = "") -> str:
 
     for parent_pid, child_pids in threads.items():
         parent_info = para_info.get(parent_pid, {})
-        if parent_info.get("done"):
+        if parent_info.get("resolved"):
             # Rule 1: parent resolved -> remove entire thread
             if parent_pid in para_to_cid:
                 ids_to_remove.add(para_to_cid[parent_pid])
@@ -937,8 +1139,8 @@ def remove_resolved_comments(doc_path: str, output_path: str = "") -> str:
                 if cpid in para_to_cid:
                     ids_to_remove.add(para_to_cid[cpid])
         else:
-            resolved_children = [cp for cp in child_pids if para_info.get(cp, {}).get("done")]
-            unresolved_children = [cp for cp in child_pids if not para_info.get(cp, {}).get("done")]
+            resolved_children = [cp for cp in child_pids if para_info.get(cp, {}).get("resolved")]
+            unresolved_children = [cp for cp in child_pids if not para_info.get(cp, {}).get("resolved")]
             for cpid in resolved_children:
                 if cpid in para_to_cid:
                     ids_to_remove.add(para_to_cid[cpid])
@@ -948,7 +1150,7 @@ def remove_resolved_comments(doc_path: str, output_path: str = "") -> str:
 
     # Standalone resolved (not in any thread)
     for pid, info in para_info.items():
-        if info["done"] and pid not in children_set and pid not in threads:
+        if info["resolved"] and pid not in children_set and pid not in threads:
             if pid in para_to_cid:
                 ids_to_remove.add(para_to_cid[pid])
 
@@ -978,10 +1180,11 @@ def remove_resolved_comments(doc_path: str, output_path: str = "") -> str:
     # Remove from commentsExtended.xml
     cid_to_para = {v: k for k, v in para_to_cid.items()}
     removed_para_ids = {cid_to_para[cid] for cid in ids_to_remove if cid in cid_to_para}
-    for ex in list(ext_tree.findall(f"{{{w15}}}commentEx")):
-        if ex.get(f"{{{w15}}}paraId", "") in removed_para_ids:
-            ext_tree.remove(ex)
-    ext_part._blob = etree.tostring(ext_tree, xml_declaration=True, encoding="UTF-8", standalone=True)
+    if ext_part is not None and ext_tree is not None:
+        for ex in list(ext_tree.findall(f"{{{w15}}}commentEx")):
+            if ex.get(f"{{{w15}}}paraId", "") in removed_para_ids:
+                ext_tree.remove(ex)
+        ext_part._blob = etree.tostring(ext_tree, xml_declaration=True, encoding="UTF-8", standalone=True)
 
     # Save with ZIP_DEFLATED (automatic via python-docx)
     if output_path and output_path != doc_path:
@@ -1153,7 +1356,11 @@ def apply_table_style(
         _apply_minimal_table_borders(table)
         _apply_table_font(table, font_name=font_name, font_size=font_size)
         if caption_prefix:
-            _set_table_caption(doc, table, f"Tabela {table_number} – {caption_prefix} {table_number}".strip())
+            _set_table_caption(
+                doc,
+                table,
+                _normalize_caption_text("Tabela", table_number, f"{caption_prefix} {table_number}".strip()),
+            )
 
     save_path = output_path if output_path and output_path != doc_path else doc_path
     if output_path and output_path != doc_path:
@@ -1186,7 +1393,8 @@ def set_table_caption(
         return {"ok": False, "message": f"Tabela {table_number} fora do intervalo 1..{len(doc.tables)}"}
 
     table = doc.tables[table_number - 1]
-    _set_table_caption(doc, table, caption_text)
+    normalized_caption = _normalize_caption_text("Tabela", table_number, caption_text)
+    _set_table_caption(doc, table, normalized_caption)
     save_path = output_path if output_path and output_path != doc_path else doc_path
     if output_path and output_path != doc_path:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -1197,8 +1405,90 @@ def set_table_caption(
     return {
         "ok": "legenda acima ausente ou fora do padrão \"Tabela N – ...\"" not in item["issues"],
         "table_number": table_number,
-        "caption": caption_text,
+        "caption": normalized_caption,
         "validation_after": item,
+        "output_path": save_path,
+    }
+
+
+@mcp.tool()
+def set_figure_caption(
+    doc_path: str,
+    figure_number: int,
+    caption_text: str,
+    output_path: str = "",
+) -> dict:
+    """Insere ou corrige a legenda acima de uma figura inline específica. `output_path` default: salva in-place."""
+    doc = Document(doc_path)
+    figure, total_figures = _get_figure_entry(doc, figure_number)
+    if figure is None:
+        return {"ok": False, "message": f"Figura {figure_number} fora do intervalo 1..{total_figures}"}
+
+    normalized_caption = _normalize_caption_text("Figura", figure_number, caption_text)
+    _set_figure_caption(doc, figure["paragraph"], normalized_caption)
+    save_path = output_path if output_path and output_path != doc_path else doc_path
+    if output_path and output_path != doc_path:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    doc.save(save_path)
+    return {
+        "ok": True,
+        "figure_number": figure_number,
+        "caption": normalized_caption,
+        "paragraph_index": figure["paragraph_index"],
+        "output_path": save_path,
+    }
+
+
+@mcp.tool()
+def set_table_source(
+    doc_path: str,
+    table_number: int,
+    source_text: str = "",
+    output_path: str = "",
+) -> dict:
+    """Insere ou corrige a fonte abaixo de uma tabela específica. `output_path` default: salva in-place."""
+    doc = Document(doc_path)
+    if table_number < 1 or table_number > len(doc.tables):
+        return {"ok": False, "message": f"Tabela {table_number} fora do intervalo 1..{len(doc.tables)}"}
+
+    normalized_source = _normalize_source_text(source_text)
+    _set_table_source(doc, doc.tables[table_number - 1], normalized_source)
+    save_path = output_path if output_path and output_path != doc_path else doc_path
+    if output_path and output_path != doc_path:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    doc.save(save_path)
+    return {
+        "ok": True,
+        "table_number": table_number,
+        "source": normalized_source,
+        "output_path": save_path,
+    }
+
+
+@mcp.tool()
+def set_figure_source(
+    doc_path: str,
+    figure_number: int,
+    source_text: str = "",
+    output_path: str = "",
+) -> dict:
+    """Insere ou corrige a fonte abaixo de uma figura inline específica. `output_path` default: salva in-place."""
+    doc = Document(doc_path)
+    figure, total_figures = _get_figure_entry(doc, figure_number)
+    if figure is None:
+        return {"ok": False, "message": f"Figura {figure_number} fora do intervalo 1..{total_figures}"}
+
+    normalized_source = _normalize_source_text(source_text)
+    _set_figure_source(doc, figure["paragraph"], normalized_source)
+    save_path = output_path if output_path and output_path != doc_path else doc_path
+    if output_path and output_path != doc_path:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    doc.save(save_path)
+    return {
+        "ok": True,
+        "figure_number": figure_number,
+        "source": normalized_source,
+        "paragraph_index": figure["paragraph_index"],
         "output_path": save_path,
     }
 

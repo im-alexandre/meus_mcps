@@ -5,11 +5,14 @@ import ollama
 
 mcp = FastMCP("local-llm")
 
+_gpu = ollama.Client(host="http://localhost:11434")  # GPU — geração LLM
+_cpu = ollama.Client(host="http://localhost:11435")  # CPU — embeddings
+
 
 @mcp.tool()
-def generate(prompt: str, model: str = "qwen2.5-coder:3b") -> str:
-    """Gera texto usando modelo local via Ollama."""
-    return ollama.chat(
+def generate(prompt: str, model: str = "qwen3:1.7b") -> str:
+    """Gera texto usando modelo local via Ollama (GPU)."""
+    return _gpu.chat(
         model=model,
         messages=[{"role": "user", "content": prompt}],
     )["message"]["content"]
@@ -17,9 +20,9 @@ def generate(prompt: str, model: str = "qwen2.5-coder:3b") -> str:
 
 @mcp.tool()
 def embed(text: str) -> list[float]:
-    """Gera embedding usando nomic-embed-text."""
-    return ollama.embeddings(
-        model="nomic-embed-text",
+    """Gera embedding usando nomic-embed-text (CPU)."""
+    return _cpu.embeddings(
+        model="embeddinggemma",
         prompt=text,
     )["embedding"]
 

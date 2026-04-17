@@ -1,6 +1,11 @@
-# Template de configuracao global do Codex.
-# Use este arquivo como referencia para ~/.codex/config.toml.
-# O autodev-codebase deve ser configurado localmente por repositorio Git.
+# Template de configuracao MCP para o Codex.
+# Este arquivo e uma fonte de referencia para bootstrap manual-assistido.
+# Substitua os placeholders diretamente ao copiar ou mesclar para ~/.codex/config.toml.
+
+[mcp_servers.autodev-codebase]
+command = "{{AUTODEV_CMD}}"
+args = {{AUTODEV_ARGS}}
+startup_timeout_sec = 30
 
 [mcp_servers.local-llm]
 command = "{{PYTHON_CMD}}"
@@ -29,6 +34,9 @@ startup_timeout_sec = 20
 [mcp_servers.docx-manager.tools.list_comments]
 approval_mode = "approve"
 
+[mcp_servers.docx-manager.tools.find_citar_paragraphs]
+approval_mode = "approve"
+
 [mcp_servers.docx-manager.tools.list_paragraphs]
 approval_mode = "approve"
 
@@ -36,16 +44,4 @@ approval_mode = "approve"
 approval_mode = "approve"
 
 [mcp_servers.docx-manager.tools.insert_candidate_comment]
-approval_mode = "approve"
-
-[mcp_servers.docx-manager.tools.set_table_caption]
-approval_mode = "approve"
-
-[mcp_servers.docx-manager.tools.set_figure_caption]
-approval_mode = "approve"
-
-[mcp_servers.docx-manager.tools.set_table_source]
-approval_mode = "approve"
-
-[mcp_servers.docx-manager.tools.set_figure_source]
 approval_mode = "approve"

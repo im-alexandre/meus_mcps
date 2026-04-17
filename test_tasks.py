@@ -1,4 +1,6 @@
 """Test script for new server_docx.py features."""
+import base64
+import datetime
 import os
 import sys
 import traceback
@@ -20,6 +22,7 @@ import server_docx as sd
 
 RESULTS = []
 TMPDIR = tempfile.mkdtemp(prefix="test_docx_")
+TINY_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sXv0WQAAAAASUVORK5CYII="
 
 
 def report(name, passed, detail=""):
@@ -71,6 +74,141 @@ def make_docx_with_comment(path):
     doc.add_comment(anchor2, "citar", author="reviewer")
 
     doc.save(path)
+
+
+def make_docx_with_inline_figure(path):
+    """Create a DOCX with one inline figure anchored to a paragraph."""
+    image_path = os.path.join(TMPDIR, f"{Path(path).stem}_figure.png")
+    with open(image_path, "wb") as handle:
+        handle.write(base64.b64decode(TINY_PNG_BASE64))
+
+    doc = Document()
+    doc.add_paragraph("Paragraph before figure.")
+    figure_paragraph = doc.add_paragraph()
+    figure_paragraph.add_run().add_picture(image_path)
+    doc.add_paragraph("Paragraph after figure.")
+    doc.save(path)
+
+
+def inject_comment_state(path, done=False, thumbsup=False, comment_index=0):
+    """Inject commentsExtended/commentsIds/commentsExtensible metadata into a DOCX."""
+    from io import BytesIO
+
+    w_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    w14_ns = "http://schemas.microsoft.com/office/word/2010/wordml"
+    w15_ns = "http://schemas.microsoft.com/office/word/2012/wordml"
+    w16cid_ns = "http://schemas.microsoft.com/office/word/2016/wordml/cid"
+    w16cex_ns = "http://schemas.microsoft.com/office/word/2018/wordml/cex"
+    cr_ns = "http://schemas.microsoft.com/office/comments/2020/reactions"
+    ct_ns = "http://schemas.openxmlformats.org/package/2006/content-types"
+    rel_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+    with open(path, "rb") as handle:
+        data = BytesIO(handle.read())
+
+    with ZipFile(data, "r") as zin:
+        parts = {name: zin.read(name) for name in zin.namelist()}
+
+    ET.register_namespace("w", w_ns)
+    ET.register_namespace("w14", w14_ns)
+    ET.register_namespace("w15", w15_ns)
+    ET.register_namespace("w16cid", w16cid_ns)
+    ET.register_namespace("w16cex", w16cex_ns)
+    ET.register_namespace("cr", cr_ns)
+    ET.register_namespace("", rel_ns)
+
+    comments_tree = ET.fromstring(parts["word/comments.xml"])
+    comments = comments_tree.findall(f"{{{w_ns}}}comment")
+    comment = comments[comment_index]
+    para_id = comment.get(f"{{{w14_ns}}}paraId") or f"AABB{comment_index + 1:04d}"
+    comment.set(f"{{{w14_ns}}}paraId", para_id)
+    comment_paragraph = comment.find(f"{{{w_ns}}}p")
+    if comment_paragraph is not None:
+        comment_paragraph.set(f"{{{w14_ns}}}paraId", para_id)
+    parts["word/comments.xml"] = ET.tostring(comments_tree, xml_declaration=True, encoding="UTF-8")
+
+    def ensure_override(ct_tree, part_name, content_type):
+        for override in ct_tree.findall(f"{{{ct_ns}}}Override"):
+            if override.get("PartName") == part_name:
+                override.set("ContentType", content_type)
+                return
+        override = ET.SubElement(ct_tree, f"{{{ct_ns}}}Override")
+        override.set("PartName", part_name)
+        override.set("ContentType", content_type)
+
+    def ensure_relationship(rels_tree, rel_type, target):
+        for relationship in rels_tree.findall(f"{{{rel_ns}}}Relationship"):
+            if relationship.get("Type") == rel_type and relationship.get("Target") == target:
+                return
+        existing_ids = [rel.get("Id", "") for rel in rels_tree.findall(f"{{{rel_ns}}}Relationship")]
+        next_id = max(
+            (
+                int(rel_id.replace("rId", ""))
+                for rel_id in existing_ids
+                if rel_id.startswith("rId") and rel_id[3:].isdigit()
+            ),
+            default=0,
+        ) + 1
+        relationship = ET.SubElement(rels_tree, f"{{{rel_ns}}}Relationship")
+        relationship.set("Id", f"rId{next_id}")
+        relationship.set("Type", rel_type)
+        relationship.set("Target", target)
+
+    ct_tree = ET.fromstring(parts["[Content_Types].xml"])
+    rels_path = "word/_rels/document.xml.rels"
+    rels_tree = ET.fromstring(parts[rels_path])
+
+    if done:
+        ext_root = ET.Element(f"{{{w15_ns}}}commentsEx")
+        ex = ET.SubElement(ext_root, f"{{{w15_ns}}}commentEx")
+        ex.set(f"{{{w15_ns}}}paraId", para_id)
+        ex.set(f"{{{w15_ns}}}done", "1")
+        parts["word/commentsExtended.xml"] = ET.tostring(ext_root, xml_declaration=True, encoding="UTF-8")
+        ensure_override(
+            ct_tree,
+            "/word/commentsExtended.xml",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml",
+        )
+        ensure_relationship(rels_tree, sd.RT_COMMENTS_EXTENDED, "commentsExtended.xml")
+
+    if thumbsup:
+        durable_id = f"DURABLE{comment_index + 1:04d}"
+        ids_root = ET.Element(f"{{{w16cid_ns}}}commentsIds")
+        comment_id = ET.SubElement(ids_root, f"{{{w16cid_ns}}}commentId")
+        comment_id.set(f"{{{w16cid_ns}}}paraId", para_id)
+        comment_id.set(f"{{{w16cid_ns}}}durableId", durable_id)
+        parts["word/commentsIds.xml"] = ET.tostring(ids_root, xml_declaration=True, encoding="UTF-8")
+
+        ext_root = ET.Element(f"{{{w16cex_ns}}}commentsExtensible")
+        extensible = ET.SubElement(ext_root, f"{{{w16cex_ns}}}commentExtensible")
+        extensible.set(f"{{{w16cex_ns}}}durableId", durable_id)
+        reactions = ET.SubElement(extensible, f"{{{cr_ns}}}reactions")
+        reaction = ET.SubElement(reactions, f"{{{cr_ns}}}reaction")
+        reaction.set("reactionType", "1")
+        parts["word/commentsExtensible.xml"] = ET.tostring(ext_root, xml_declaration=True, encoding="UTF-8")
+
+        ensure_override(
+            ct_tree,
+            "/word/commentsIds.xml",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml",
+        )
+        ensure_override(
+            ct_tree,
+            "/word/commentsExtensible.xml",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtensible+xml",
+        )
+        ensure_relationship(rels_tree, sd.RT_COMMENTS_IDS, "commentsIds.xml")
+        ensure_relationship(rels_tree, sd.RT_COMMENTS_EXTENSIBLE, "commentsExtensible.xml")
+
+    parts["[Content_Types].xml"] = ET.tostring(ct_tree, xml_declaration=True, encoding="UTF-8")
+    parts[rels_path] = ET.tostring(rels_tree, xml_declaration=True, encoding="UTF-8")
+
+    buf = BytesIO()
+    with ZipFile(buf, "w", ZIP_DEFLATED) as zout:
+        for name, content in parts.items():
+            zout.writestr(name, content)
+    with open(path, "wb") as handle:
+        handle.write(buf.getvalue())
 
 
 def make_docx_with_equations(path):
@@ -139,26 +277,44 @@ def make_docx_with_duplicate_equation_numbers(path):
 
 
 # ────────────────────────────────────────────────────────
-# Test 1: find_instruction_paragraphs
+# Test 1: list_comments
 # ────────────────────────────────────────────────────────
-def test_find_instruction_paragraphs():
-    path = os.path.join(TMPDIR, "test_instr.docx")
+def test_list_comments_context():
+    path = os.path.join(TMPDIR, "test_comments.docx")
     make_docx_with_comment(path)
     try:
-        result = sd.find_instruction_paragraphs(path)
-        # Should find the "Reescrever em tom formal" comment, not "citar"
-        has_instruction = any(
-            isinstance(r, dict) and r.get("instruction", "").startswith("Reescrever")
-            for r in result
+        result = sd.list_comments(path)
+        report("list_comments: returns comments", len(result) == 2, str(result))
+        first = next((item for item in result if item.get("text", "").startswith("Reescrever")), {})
+        second = next((item for item in result if item.get("text", "").lower() == "citar"), {})
+        report("list_comments: first paragraph index", first.get("paragraph_index") == 0, str(first))
+        report(
+            "list_comments: first paragraph text",
+            first.get("paragraph_text", "").startswith("Paragraph with instruction comment."),
+            str(first),
         )
-        has_citar = any(
-            isinstance(r, dict) and r.get("instruction", "").lower() == "citar"
-            for r in result
-        )
-        report("find_instruction_paragraphs: finds instruction", has_instruction)
-        report("find_instruction_paragraphs: excludes 'citar'", not has_citar)
+        report("list_comments: second paragraph index", second.get("paragraph_index") == 1, str(second))
     except Exception as e:
-        report("find_instruction_paragraphs", False, str(e))
+        report("list_comments context", False, str(e))
+        traceback.print_exc()
+
+
+def test_removed_public_apis():
+    report("removed api: get_situation", not hasattr(sd, "get_situation"))
+    report("removed api: find_citar_paragraphs", not hasattr(sd, "find_citar_paragraphs"))
+    report("removed api: find_instruction_paragraphs", not hasattr(sd, "find_instruction_paragraphs"))
+
+
+def test_list_comments_resolved_by_thumbsup():
+    path = os.path.join(TMPDIR, "test_comments_thumbsup.docx")
+    make_docx_with_comment(path)
+    try:
+        inject_comment_state(path, thumbsup=True)
+        result = sd.list_comments(path)
+        first = next((item for item in result if item.get("paragraph_index") == 0), {})
+        report("list_comments: thumbsup resolved", first.get("resolved") is True, str(first))
+    except Exception as e:
+        report("list_comments thumbsup", False, str(e))
         traceback.print_exc()
 
 
@@ -182,10 +338,19 @@ def test_reply_comment():
         comments_after = sd._get_comments(out_path)
         reply_found = any(c["text"] == "Done, rewritten." for c in comments_after)
         report("reply_comment: reply in comments.xml", reply_found)
+        reply = next((c for c in comments_after if c["text"] == "Done, rewritten."), None)
+        report("reply_comment: reply linked to parent", bool(reply and reply.get("parent_id") == cid), str(reply))
 
         # Verify commentsExtended.xml has the new entry
         ext = sd._get_comment_para_ids(out_path)
         report("reply_comment: commentsExtended updated", len(ext) > 0)
+
+        tree = sd.list_comments(out_path)
+        parent = next((c for c in tree if c["id"] == cid), None)
+        nested_reply = next((r for r in (parent or {}).get("replies", []) if r["text"] == "Done, rewritten."), None)
+        report("list_comments: returns roots only", all(not c.get("parent_id") for c in tree), str(tree))
+        report("list_comments: nests replies", nested_reply is not None)
+        report("list_comments: reply inherits paragraph index", (nested_reply or {}).get("paragraph_index") == 0, str(nested_reply))
     except Exception as e:
         report("reply_comment", False, str(e))
         traceback.print_exc()
@@ -251,72 +416,7 @@ def test_remove_resolved_comments_with_resolved():
     make_docx_with_comment(path)
 
     try:
-        # Inject commentsExtended.xml with done=1 for the first comment
-        from io import BytesIO
-
-        w_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        w14_ns = "http://schemas.microsoft.com/office/word/2010/wordml"
-        w15_ns = "http://schemas.microsoft.com/office/word/2012/wordml"
-        ct_ns = "http://schemas.openxmlformats.org/package/2006/content-types"
-        rel_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
-
-        with open(path, "rb") as f:
-            data = BytesIO(f.read())
-
-        with ZipFile(data, "r") as zin:
-            parts = {}
-            for name in zin.namelist():
-                parts[name] = zin.read(name)
-
-        # Find paraId of first comment
-        ET.register_namespace("w", w_ns)
-        ET.register_namespace("w14", w14_ns)
-        ET.register_namespace("w15", w15_ns)
-
-        comments_tree = ET.fromstring(parts["word/comments.xml"])
-        first_comment = comments_tree.find(f"{{{w_ns}}}comment")
-        para_id = first_comment.get(f"{{{w14_ns}}}paraId")
-
-        if not para_id:
-            # python-docx may not set paraId; manually add one
-            para_id = "AABB0011"
-            first_comment.set(f"{{{w14_ns}}}paraId", para_id)
-            parts["word/comments.xml"] = ET.tostring(comments_tree, xml_declaration=True, encoding="UTF-8")
-
-        # Create commentsExtended.xml
-        ext_root = ET.Element(f"{{{w15_ns}}}commentsEx")
-        ex = ET.SubElement(ext_root, f"{{{w15_ns}}}commentEx")
-        ex.set(f"{{{w15_ns}}}paraId", para_id)
-        ex.set(f"{{{w15_ns}}}done", "1")
-        parts["word/commentsExtended.xml"] = ET.tostring(ext_root, xml_declaration=True, encoding="UTF-8")
-
-        # Update content types
-        if "[Content_Types].xml" in parts:
-            ct_tree = ET.fromstring(parts["[Content_Types].xml"])
-            override = ET.SubElement(ct_tree, f"{{{ct_ns}}}Override")
-            override.set("PartName", "/word/commentsExtended.xml")
-            override.set("ContentType", "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml")
-            parts["[Content_Types].xml"] = ET.tostring(ct_tree, xml_declaration=True, encoding="UTF-8")
-
-        # Add relationship for commentsExtended.xml (needed by OPC-based code)
-        rels_path = "word/_rels/document.xml.rels"
-        if rels_path in parts:
-            ET.register_namespace("", rel_ns)
-            rels_tree = ET.fromstring(parts[rels_path])
-            existing_ids = [r.get("Id", "") for r in rels_tree.findall(f"{{{rel_ns}}}Relationship")]
-            rid_num = max((int(r.replace("rId", "")) for r in existing_ids if r.startswith("rId") and r[3:].isdigit()), default=0) + 1
-            new_rel = ET.SubElement(rels_tree, f"{{{rel_ns}}}Relationship")
-            new_rel.set("Id", f"rId{rid_num}")
-            new_rel.set("Type", "http://schemas.microsoft.com/office/2011/relationships/commentsExtended")
-            new_rel.set("Target", "commentsExtended.xml")
-            parts[rels_path] = ET.tostring(rels_tree, xml_declaration=True, encoding="UTF-8")
-
-        buf = BytesIO()
-        with ZipFile(buf, "w", ZIP_DEFLATED) as zout:
-            for name, content in parts.items():
-                zout.writestr(name, content)
-        with open(path, "wb") as f:
-            f.write(buf.getvalue())
+        inject_comment_state(path, done=True)
 
         comments_before = sd._get_comments(path)
         count_before = len(comments_before)
@@ -330,6 +430,31 @@ def test_remove_resolved_comments_with_resolved():
 
     except Exception as e:
         report("remove_resolved_comments (resolved)", False, str(e))
+        traceback.print_exc()
+
+
+def test_remove_resolved_comments_with_thumbsup():
+    path = os.path.join(TMPDIR, "test_resolved_thumbsup.docx")
+    out_path = os.path.join(TMPDIR, "test_resolved_thumbsup_out.docx")
+    make_docx_with_comment(path)
+
+    try:
+        inject_comment_state(path, thumbsup=True)
+
+        comments_before = sd._get_comments(path)
+        count_before = len(comments_before)
+
+        result = sd.remove_resolved_comments(path, out_path)
+        report("remove_resolved_comments (thumbsup): removes comment", "1 comentarios" in result, result)
+
+        comments_after = sd._get_comments(out_path)
+        report(
+            "remove_resolved_comments (thumbsup): count decreased",
+            len(comments_after) < count_before,
+            f"before={count_before}, after={len(comments_after)}",
+        )
+    except Exception as e:
+        report("remove_resolved_comments (thumbsup)", False, str(e))
         traceback.print_exc()
 
 
@@ -506,15 +631,73 @@ def test_set_table_caption():
     out_path = os.path.join(TMPDIR, "test_cap_out.docx")
     make_simple_docx(path)
     try:
-        result = sd.set_table_caption(path, 1, "Tabela 1 \u2013 Updated caption", out_path)
+        result = sd.set_table_caption(path, 1, "Updated caption", out_path)
         report("set_table_caption: ok", result.get("ok", False), str(result))
+        doc2 = Document(out_path)
+        caption = sd._get_table_caption(doc2, doc2.tables[0])
+        report("set_table_caption: normalizes prefix", caption == "Tabela 1 – Updated caption", caption)
     except Exception as e:
         report("set_table_caption", False, str(e))
         traceback.print_exc()
 
 
 # ────────────────────────────────────────────────────────
-# Test 11: validate_tables_with_comments
+# Test 11: set_table_source
+# ────────────────────────────────────────────────────────
+def test_set_table_source():
+    path = os.path.join(TMPDIR, "test_table_source.docx")
+    out_path = os.path.join(TMPDIR, "test_table_source_out.docx")
+    make_simple_docx(path)
+    try:
+        result = sd.set_table_source(path, 1, output_path=out_path)
+        expected = f"Fonte: Autor ({datetime.datetime.now().year})"
+        report("set_table_source: ok", result.get("ok", False), str(result))
+        doc2 = Document(out_path)
+        texts = [sd._get_paragraph_full_text(p).strip() for p in doc2.paragraphs if sd._get_paragraph_full_text(p).strip()]
+        report("set_table_source: default source inserted", expected in texts, str(texts))
+    except Exception as e:
+        report("set_table_source", False, str(e))
+        traceback.print_exc()
+
+
+# ────────────────────────────────────────────────────────
+# Test 12: set_figure_caption
+# ────────────────────────────────────────────────────────
+def test_set_figure_caption():
+    path = os.path.join(TMPDIR, "test_figure_caption.docx")
+    out_path = os.path.join(TMPDIR, "test_figure_caption_out.docx")
+    make_docx_with_inline_figure(path)
+    try:
+        result = sd.set_figure_caption(path, 1, "Fluxo do modelo", out_path)
+        report("set_figure_caption: ok", result.get("ok", False), str(result))
+        doc2 = Document(out_path)
+        texts = [sd._get_paragraph_full_text(p).strip() for p in doc2.paragraphs if sd._get_paragraph_full_text(p).strip()]
+        report("set_figure_caption: normalizes prefix", "Figura 1 – Fluxo do modelo" in texts, str(texts))
+    except Exception as e:
+        report("set_figure_caption", False, str(e))
+        traceback.print_exc()
+
+
+# ────────────────────────────────────────────────────────
+# Test 13: set_figure_source
+# ────────────────────────────────────────────────────────
+def test_set_figure_source():
+    path = os.path.join(TMPDIR, "test_figure_source.docx")
+    out_path = os.path.join(TMPDIR, "test_figure_source_out.docx")
+    make_docx_with_inline_figure(path)
+    try:
+        result = sd.set_figure_source(path, 1, "Autor (2024)", out_path)
+        report("set_figure_source: ok", result.get("ok", False), str(result))
+        doc2 = Document(out_path)
+        texts = [sd._get_paragraph_full_text(p).strip() for p in doc2.paragraphs if sd._get_paragraph_full_text(p).strip()]
+        report("set_figure_source: prefixes source", "Fonte: Autor (2024)" in texts, str(texts))
+    except Exception as e:
+        report("set_figure_source", False, str(e))
+        traceback.print_exc()
+
+
+# ────────────────────────────────────────────────────────
+# Test 14: validate_tables_with_comments
 # ────────────────────────────────────────────────────────
 def test_validate_tables_with_comments():
     path = os.path.join(TMPDIR, "test_vtc.docx")
@@ -530,7 +713,7 @@ def test_validate_tables_with_comments():
 
 
 # ────────────────────────────────────────────────────────
-# Test 12: edge case — empty doc
+# Test 15: edge case — empty doc
 # ────────────────────────────────────────────────────────
 def test_edge_empty_doc():
     path = os.path.join(TMPDIR, "test_empty.docx")
@@ -540,8 +723,8 @@ def test_edge_empty_doc():
         result = sd.renumber_tables(path)
         report("edge: renumber_tables on empty doc", result.get("ok") is False, str(result.get("message", "")))
 
-        result2 = sd.find_instruction_paragraphs(path)
-        report("edge: find_instruction on empty doc", isinstance(result2, list))
+        result2 = sd.list_comments(path)
+        report("edge: list_comments on empty doc", isinstance(result2, list), str(result2))
 
         result3 = sd.renumber_equations(path)
         report("edge: renumber_equations on empty doc", result3.get("ok") is False)
@@ -551,7 +734,7 @@ def test_edge_empty_doc():
 
 
 # ────────────────────────────────────────────────────────
-# Test 13: paragraph_index out of range
+# Test 16: paragraph_index out of range
 # ────────────────────────────────────────────────────────
 def test_edge_out_of_range():
     path = os.path.join(TMPDIR, "test_oor.docx")
@@ -578,11 +761,14 @@ def test_edge_out_of_range():
 if __name__ == "__main__":
     print(f"Temp dir: {TMPDIR}\n")
 
-    test_find_instruction_paragraphs()
+    test_list_comments_context()
+    test_removed_public_apis()
+    test_list_comments_resolved_by_thumbsup()
     test_reply_comment()
     test_replace_paragraph_text()
     test_remove_resolved_comments()
     test_remove_resolved_comments_with_resolved()
+    test_remove_resolved_comments_with_thumbsup()
     test_renumber_tables()
     test_insert_citation()
     test_output_path_optional()
@@ -591,6 +777,9 @@ if __name__ == "__main__":
     test_renumber_equations_with_duplicate_numbers()
     test_apply_table_style()
     test_set_table_caption()
+    test_set_table_source()
+    test_set_figure_caption()
+    test_set_figure_source()
     test_validate_tables_with_comments()
     test_edge_empty_doc()
     test_edge_out_of_range()
