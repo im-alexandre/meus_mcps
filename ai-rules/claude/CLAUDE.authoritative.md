@@ -14,7 +14,9 @@ Para respostas em terminal, especialmente no PowerShell/Windows Terminal deste u
 
 1. ao apresentar tabelas, prefira tabelas Unicode com box-drawing, e nao tabelas Markdown cruas
 2. se a tabela ficar larga demais, quebre em multiplas tabelas menores ou use formato vertical alinhado
-3. para formulas e expressoes simples, prefira texto ASCII linear quando isso evitar renderizacao quebrada no terminal
+3. para formulas, expressoes e simbolos matematicos, prefira Unicode legivel em terminal quando o layout permanecer estavel, por exemplo `∫`, `∞`, `√`, `π`, `Σ`, `→`, `−`, `²`
+4. emoji estao autorizados quando melhorarem legibilidade, sinalizacao visual ou escaneabilidade no terminal
+5. use ASCII linear apenas como fallback quando houver risco real de quebra de alinhamento, incompatibilidade de fonte ou pedido explicito do usuario
 
 ## Commits
 
