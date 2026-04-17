@@ -8,6 +8,14 @@ Este arquivo contem apenas regras invariantes entre projetos. Regras especificas
 
 Quando `AUTHORITATIVE_RULES_ROOT` ainda nao existir no ambiente local, use o bootstrap publico em `https://github.com/im-alexandre/meus_mcps/blob/main/bootstrap.md` como procedimento de configuracao global.
 
+## Preferencias de apresentacao
+
+Para respostas em terminal, especialmente no PowerShell/Windows Terminal deste usuario:
+
+1. ao apresentar tabelas, prefira tabelas Unicode com box-drawing, e nao tabelas Markdown cruas
+2. se a tabela ficar larga demais, quebre em multiplas tabelas menores ou use formato vertical alinhado
+3. para formulas e expressoes simples, prefira texto ASCII linear quando isso evitar renderizacao quebrada no terminal
+
 ## Commits
 
 Nunca incluir linha `Co-Authored-By` em mensagens de commit.
