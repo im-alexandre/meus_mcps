@@ -25,7 +25,7 @@ Abra uma issue com o prefixo `[sugestão]` no título. Descreva o caso de uso �
 3. Faça as alterações e adicione testes se aplicável
 4. Certifique-se de que o código roda sem erros:
    ```bash
-   python -m py_compile server_llm.py server_scopus.py server_docx.py
+   python -m py_compile server_llm.py server_scopus.py
    ```
 5. Abra um pull request descrevendo o que foi alterado e por quê
 

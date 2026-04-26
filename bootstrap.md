@@ -66,7 +66,6 @@ Secoes obrigatorias do Codex neste arquivo global:
 
 - `[mcp_servers.local-llm]`
 - `[mcp_servers.scopus-search]`
-- `[mcp_servers.docx-manager]`
 
 Se `~/.codex/config.toml` ja existir, faca merge preservando configuracoes nao relacionadas.
 
@@ -157,7 +156,7 @@ Confirme tambem:
 
 - `REPO_ROOT/ai-rules/codex/AGENTS.authoritative.md` existe
 - `REPO_ROOT/ai-rules/claude/CLAUDE.authoritative.md` existe
-- os caminhos de `server_llm.py`, `server_scopus.py` e `server_docx.py` usados nas configs existem de fato
+- os caminhos de `server_llm.py` e `server_scopus.py` usados nas configs existem de fato
 
 ## MCPs externos
 

@@ -16,7 +16,7 @@ COLLECTION_NAME = "scopus"
 
 _client: chromadb.ClientAPI | None = None
 _collection: chromadb.Collection | None = None
-DEFAULT_OLLAMA_PORT = 11434
+DEFAULT_OLLAMA_PORT = 11435
 _ollama_clients: dict[int, ollama.Client] = {}
 
 

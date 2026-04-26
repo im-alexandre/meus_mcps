@@ -8,10 +8,6 @@
       "command": "{{PYTHON_CMD}}",
       "args": ["{{REPO_ROOT}}/server_scopus.py"]
     },
-    "docx-manager": {
-      "command": "{{PYTHON_CMD}}",
-      "args": ["{{REPO_ROOT}}/server_docx.py"]
-    },
     "pdf-indexer": {
       "command": "{{PYTHON_CMD}}",
       "args": ["{{REPO_ROOT}}/pdf-indexer-mcp/semantic_chunked_pdf_rag.py"]

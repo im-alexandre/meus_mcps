@@ -8,7 +8,6 @@ Este repositório reúne servidores MCP locais para uso em automação de pesqui
 
 - `server_llm.py`: integração local com Ollama
 - `server_scopus.py`: indexação e busca semântica em acervo Scopus local
-- `server_docx.py`: leitura e edição de arquivos `.docx`
 
 ## Convenções
 
@@ -23,7 +22,6 @@ Este repositório reúne servidores MCP locais para uso em automação de pesqui
 
 - Trate `D:\mcp` como fonte principal.
 - Antes de publicar mudanças em um servidor MCP, rode ao menos uma verificação local simples de importação ou execução.
-- No `docx-manager`, operações sobre equações devem sempre validar a consistência das referências textuais.
 
 ## Git
 

@@ -37,14 +37,6 @@ Para exploracao de codigo e estrutura de projeto:
 
 Quando o projeto atual for um repositório Git e usar `autodev-codebase`, configure-o em `$repoRoot/.codex/config.toml`.
 
-## DOCX
-
-Qualquer tarefa que leia, revise, valide, comente, cite, formate, renumere ou edite arquivo `.docx` deve ler `AUTHORITATIVE_RULES_ROOT/mcp/docx-manager.md` antes de prosseguir, mesmo que o MCP `docx-manager` ainda nao tenha sido chamado neste task.
-
-Se o `docx-manager` nao cobrir o caso, use `python-docx` como fallback. Se `python-docx` nao estiver disponivel, instale-o antes de continuar.
-
-Ao trabalhar com `.docx`, nao leia o documento inteiro apenas para localizar um trecho. Prefira comentarios, validacoes e buscas dirigidas; se faltar busca no MCP, ajuste o `docx-manager` ou use um fallback local que retorne apenas o recorte necessario.
-
 ## Refatoracao e extracao de codigo
 
 Ao mover ou extrair simbolos (funcoes, classes, constantes) para outros modulos, execute obrigatoriamente uma etapa de verificacao pos-extracao: para cada simbolo declarado como "movido", confirme que nao existe mais definicao no arquivo original. Sem essa verificacao, o arquivo fonte pode reter a definicao original enquanto o novo modulo tambem a define, causando shadowing silencioso ou residuos que quebram a refatoracao.

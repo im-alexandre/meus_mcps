@@ -2,11 +2,14 @@ services:
   ollama-gpu:
     image: ollama/ollama
     container_name: ollama-gpu
+    restart: unless-stopped
     ports:
       - "11434:11434"
     environment:
-      OLLAMA_NUM_PARALLEL: "2"
-      # OLLAMA_GPU_OVERHEAD: "1073741824" # 1.25 GiB
+      # Perfil conservador para embeddings do scopus-search.
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_KEEP_ALIVE: "5m"
       OLLAMA_GPU_OVERHEAD: "1073741824" # 1 GiB
       # OLLAMA_GPU_OVERHEAD: "1342177280" # 1.25 GiB
       # OLLAMA_GPU_OVERHEAD: "1610612736" # 1.5 GiB
@@ -17,15 +20,19 @@ services:
       - type: bind
         source: D:\ollama\models
         target: /root/.ollama/models
+    cpus: 2.0
+    mem_limit: 4g
+    pids_limit: 512
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              count: 1
               capabilities: [gpu]
 
   ollama-cpu:
+    profiles: ["cpu"]
     image: ollama/ollama
     container_name: ollama-cpu
     ports:
@@ -35,8 +42,14 @@ services:
         source: D:\ollama\models
         target: /root/.ollama/models
     environment:
-      OLLAMA_NUM_PARALLEL: "2"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_KEEP_ALIVE: "5m"
       CUDA_VISIBLE_DEVICES: "-1"
+    cpus: 1.0
+    mem_limit: 2g
+    mem_reservation: 1g
+    pids_limit: 256
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -47,6 +60,10 @@ services:
       - "6334:6334"
     volumes:
       - qdrant_storage:/qdrant/storage
+    cpus: 1.5
+    mem_limit: 2g
+    mem_reservation: 512m
+    pids_limit: 256
 
 volumes:
   qdrant_storage:

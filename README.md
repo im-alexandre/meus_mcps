@@ -1,91 +1,25 @@
 # meus_mcps
 
-Coleção de servidores MCP locais voltada a pesquisadores que precisam combinar programação e escrita acadêmica no mesmo fluxo de trabalho. O projeto nasceu para apoiar uma pesquisa quantitativa que usava notebooks Python — havia uma lacuna entre o código que gerava os resultados e o texto científico que precisava descrevê-los, interpretá-los e citá-los corretamente. Estes servidores preenchem essa lacuna: permitem que um assistente de IA leia, edite e organize documentos Word, busque referências bibliográficas, interprete código e gere texto diretamente no contexto da pesquisa, sem sair do ambiente de escrita.
+Colecao de servidores MCP locais voltada a fluxos de pesquisa assistida, com foco atual em:
 
-O conjunto está amplamente testado com Python e há indícios de bom funcionamento com a linguagem R — o fluxo não depende da linguagem de análise, mas sim da capacidade de conectar os resultados computacionais ao documento acadêmico.
+- geracao local de texto e embeddings;
+- indexacao e busca semantica em acervos bibliograficos;
+- bootstrap e regras autoritativas para configurar o ambiente.
 
 ## Servidores
 
-- `local-llm`: geração local de texto e embeddings via Ollama
-- `scopus-search`: indexação e busca semântica em exportações do Scopus
-- `docx-manager`: leitura e edição dirigida de arquivos `.docx`
+- `local-llm`: geracao local de texto e embeddings via Ollama
+- `scopus-search`: indexacao e busca semantica em exportacoes do Scopus
 
 ## Estrutura
 
-- `server_llm.py`: servidor MCP para geração e embeddings locais
-- `server_scopus.py`: servidor MCP para indexação e busca em CSVs do Scopus
-- `server_docx.py`: servidor MCP para leitura, comentários, citações e equações em `.docx`
+- `server_llm.py`: servidor MCP para geracao e embeddings locais
+- `server_scopus.py`: servidor MCP para indexacao e busca em CSVs do Scopus
 - `bootstrap.md`: ponto de entrada publico para configurar Claude e Codex a partir de uma unica URL
 - `AGENTS.minimal.md`: stub minimo para `~/.codex/AGENTS.md`
 - `CLAUDE.minimal.md`: stub minimo para `~/.claude/CLAUDE.md`
 - `ai-rules/codex/AGENTS.authoritative.md`: regras autoritativas globais do Codex
 - `ai-rules/claude/CLAUDE.authoritative.md`: regras autoritativas globais do Claude
-
-O fluxo recomendado de configuracao global agora e passar ao agente a URL da pagina de `bootstrap.md` no GitHub:
-
-- https://github.com/im-alexandre/meus_mcps/blob/main/bootstrap.md
-
-Esse documento instrui o agente a editar os arquivos locais corretos e a usar os templates deste repositório como fonte de verdade.
-
-## Contexto do Workflow
-
-Estes MCPs nasceram de um fluxo local-first para escrita acadêmica assistida, com foco em controle humano e rastreabilidade das evidências. A ideia central é separar claramente:
-
-- busca e recuperação de fontes
-- validação pelo pesquisador no próprio documento
-- inserção final de citações e referências em formato ABNT
-
-### Fluxo consolidado
-
-```text
-DOCX -> comentários com instruções em linguagem natural
-     -> leitura do trecho e execução do comando indicado
-     -> geração ou edição de texto diretamente no documento
-     -> comentário marcando o trecho gerado, com justificativa
-     -> pesquisador valida respondendo o comentário com "OK"
-     -> busca por candidatos em Scopus local, PDFs indexados e internet
-     -> inserção final de citação (inline) e referência (ABNT) no documento
-```
-
-O ponto central do fluxo é o comentário no Word: qualquer instrução deixada pelo pesquisador — não só "citar", mas também "reescrever", "resumir", "traduzir" — é lida, executada e devolvida como novo comentário para revisão. A validação humana é explícita: o pesquisador lê o resultado e responde com "OK" para confirmar.
-
-### Arquitetura prática
-
-- `local-llm` apoia geração local de texto e embeddings via Ollama (os embeddings são representações numéricas do significado dos textos, usadas para encontrar conteúdo por similaridade semântica)
-- `scopus-search` cobre indexação e busca semântica em CSVs exportados do Scopus
-- `docx-manager` lê e edita `.docx` — insere e formata texto, tabelas, equações e citações, valida referências cruzadas, renumera elementos e aplica estilos
-- `pdf-indexer` complementa com ingestão e busca semântica em PDFs técnicos
-
-### Decisões de implementação
-
-O maior ganho deste fluxo está na junção de dois mundos: o comportamento **não-determinístico** da IA generativa — que interpreta instruções em linguagem natural, adapta o texto ao contexto e sugere conteúdo — com o comportamento **determinístico** das ferramentas programáticas — que inserem citações no formato correto, renumeram equações, validam referências e calculam similaridade via embeddings. Cada um faz o que faz melhor, e o pesquisador decide o que fica.
-
-Outras escolhas que sustentam esse equilíbrio:
-
-- priorizar ferramentas locais, com pouca dependência de serviços externos
-- manter busca semântica separada da decisão bibliográfica final
-- usar comentários no Word como canal de instrução e validação humana
-
-## Instalacao
-
-Clone o repositório:
-
-```powershell
-git clone https://github.com/im-alexandre/meus_mcps.git C:\tools\meus_mcps
-cd C:\tools\meus_mcps
-```
-
-Pré-requisitos:
-
-- Python 3.11+
-- Ollama instalado e em execução
-- modelos locais necessários já baixados, especialmente `nomic-embed-text`
-
-Instale as dependências:
-
-```powershell
-python -m pip install -r requirements.txt
-```
 
 ## Bootstrap recomendado
 
@@ -95,7 +29,7 @@ Para configurar Codex ou Claude em uma maquina nova, entregue ao agente a URL:
 https://github.com/im-alexandre/meus_mcps/blob/main/bootstrap.md
 ```
 
-O `bootstrap.md` e o procedimento canônico. Ele cobre:
+O `bootstrap.md` e o procedimento canonico. Ele cobre:
 
 - descoberta do `REPO_ROOT`
 - atualizacao de `~/.codex/AGENTS.md`
@@ -119,13 +53,13 @@ Os templates usados pelo bootstrap sao:
 
 Esses arquivos devem ser copiados ou mesclados manualmente pelo agente no ambiente local, substituindo os placeholders pelo estado real da maquina.
 
-## Serviços de suporte
+## Servicos de suporte
 
-Alguns serviços precisam estar em execução antes de iniciar os MCPs. Rode-os em segundo plano (detached) para não bloquear o terminal.
+Alguns servicos precisam estar em execucao antes de iniciar os MCPs. Rode-os em segundo plano para nao bloquear o terminal.
 
 ### Ollama
 
-Necessário para `local-llm` e `scopus-search`. Expõe os modelos locais via API REST.
+Necessario para `local-llm` e `scopus-search`.
 
 **Bash:**
 
@@ -141,29 +75,22 @@ Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Hidden
 
 ### autodev-codebase
 
-Servidor MCP para busca semântica e outline estrutural do código-fonte do projeto. Repositório: https://github.com/anrgct/autodev-codebase
+Servidor MCP para busca semantica e outline estrutural do codigo-fonte do projeto. Repositorio: https://github.com/anrgct/autodev-codebase
 
-Instale as dependências uma vez:
+Instale as dependencias uma vez:
 
 ```bash
 npm install
 npm run build
 ```
 
-A configuração recomendada agora é **local por repositório Git**, não global:
+A configuracao recomendada e local por repositorio Git:
 
 - Codex: `$repoRoot/.codex/config.toml`
 - Claude MCP: `$repoRoot/.mcp.json`
 - Claude hooks: `$repoRoot/.claude/settings.json`
 
-Se você usa wrappers locais para `codex` e `claude` no PowerShell, esses arquivos podem ser gerados automaticamente no repositório a partir da URL HTTP do servidor MCP iniciada para aquele projeto.
+## Observacoes
 
-Sem esses wrappers, você ainda pode iniciar o servidor manualmente e apontar o cliente MCP para a URL/stdio correspondente.
-
----
-
-## Observações
-
-- O diretório `pdf-indexer-mcp/` está ignorado no Git para evitar versionar um projeto maior e independente junto com estes servidores.
+- O diretorio `pdf-indexer-mcp/` esta ignorado no Git para evitar versionar um projeto maior e independente junto com estes servidores.
 - O `scopus-search` usa `ChromaDB` e `Ollama`.
-- O `docx-manager` depende de `python-docx` e faz linearização de equações para validação textual.
