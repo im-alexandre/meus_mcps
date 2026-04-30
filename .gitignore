@@ -30,6 +30,34 @@ node_modules/
 outputs/
 chroma_data/
 
+# Worktrees e estado local de agentes
+.claude/worktrees/
+.claude/settings.local.json
+.codex/config.toml
+.mcp.json
+
+# Logs e temporarios
+*.log
+*.tmp
+*.temp
+*.bak
+*.bak-*
+*.orig
+*.rej
+tmp/
+temp/
+
+# Bancos/indices locais
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.duckdb
+
+# Caches gerais
+.cache/
+
 # Projeto local grande e independente
 pdf-indexer-mcp/
 
