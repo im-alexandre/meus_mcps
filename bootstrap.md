@@ -10,11 +10,7 @@ Use este documento quando o ambiente global do Codex ou do Claude ainda nao esti
 
 Ao final do bootstrap, o ambiente deve ter:
 
-- `~/.codex/AGENTS.md` apontando para o `AUTHORITATIVE_RULES_ROOT` real
 - `~/.codex/config.toml` com os MCPs globais do projeto, sem `autodev-codebase`
-- `~/.claude/CLAUDE.md` apontando para o `AUTHORITATIVE_RULES_ROOT` real
-- `~/.claude/settings.json` configurado a partir do template global do repositório
-- `~/.claude/.mcp.json` ou `~/.claude/mcp.json` configurado a partir do template global do repositório, quando aplicavel
 
 ## Fluxo unico
 
@@ -41,18 +37,11 @@ Exemplos:
 - Windows: `D:/mcp/ai-rules`
 - WSL/Linux: `/mnt/d/mcp/ai-rules` ou `/home/<usuario>/meus_mcps/ai-rules`
 
-### 3. Atualizar os stubs minimos
-
-Copie os arquivos abaixo do repositório para os caminhos globais e substitua o valor padrao de `AUTHORITATIVE_RULES_ROOT` pelo path real do clone:
-
-- `AGENTS.minimal.md` -> `~/.codex/AGENTS.md`
-- `CLAUDE.minimal.md` -> `~/.claude/CLAUDE.md`
-
 Os arquivos globais devem continuar curtos. Nao mova regras longas para eles.
 
 ## Passos do Codex
 
-### 4. Configurar `~/.codex/config.toml`
+### 1. Configurar `~/.codex/config.toml`
 
 Use `ai-rules/codex/codex_settings.toml` como template de referencia.
 

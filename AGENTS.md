@@ -26,4 +26,5 @@ Este repositório reúne servidores MCP locais para uso em automação de pesqui
 ## Git
 
 - Não versione `pdf-indexer-mcp/` neste repositório.
+- Não versione `chroma_data/`, `mendeley-mcp/`, `output/`
 - Não commite caches, ambientes virtuais ou artefatos temporários.
