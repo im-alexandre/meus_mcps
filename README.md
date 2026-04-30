@@ -9,12 +9,12 @@ Colecao de servidores MCP locais voltada a fluxos de pesquisa assistida, com foc
 ## Servidores
 
 - `local-llm`: geracao local de texto e embeddings via Ollama
-- `scopus-search`: indexacao e busca semantica em exportacoes do Scopus
+- `scopus-search`: indexacao e busca semantica em exportacoes do Scopus nos formatos CSV e RIS
 
 ## Estrutura
 
 - `server_llm.py`: servidor MCP para geracao e embeddings locais
-- `server_scopus.py`: servidor MCP para indexacao e busca em CSVs do Scopus
+- `server_scopus.py`: servidor MCP para indexacao e busca em CSVs e RIS do Scopus
 - `bootstrap.md`: ponto de entrada publico para configurar Claude e Codex a partir de uma unica URL
 - `AGENTS.minimal.md`: stub minimo para `~/.codex/AGENTS.md`
 - `CLAUDE.minimal.md`: stub minimo para `~/.claude/CLAUDE.md`
@@ -90,7 +90,61 @@ A configuracao recomendada e local por repositorio Git:
 - Claude MCP: `$repoRoot/.mcp.json`
 - Claude hooks: `$repoRoot/.claude/settings.json`
 
+## MCP `scopus-search`
+
+O servidor `server_scopus.py` cria um indice persistente no ChromaDB para busca semantica em acervos exportados do Scopus. Ele usa o Ollama para gerar embeddings.
+
+### Pre-requisitos
+
+Instale as dependencias Python:
+
+```bash
+pip install -r requirements.txt
+```
+
+Garanta que o Ollama esteja em execucao no host configurado e que o modelo de embedding esteja disponivel:
+
+```bash
+ollama pull embeddinggemma
+```
+
+Por padrao, o servidor chama o Ollama em `http://localhost:11434` e usa o modelo `embeddinggemma`. As ferramentas aceitam os parametros opcionais `host`, `port` e `model` quando for necessario sobrescrever esses valores em uma chamada especifica.
+
+### Armazenamento
+
+O indice e persistido no diretorio definido por `CHROMA_DIR`. Se a variavel nao estiver configurada, o padrao e `./chroma_data`.
+
+A collection usada no ChromaDB vem de `CHROMA_COLLECTION`. Se a variavel estiver vazia ou ausente, o padrao e `scopus`.
+
+O host do Ollama vem de `HOST`. Se a variavel estiver vazia ou ausente, o padrao e `http://localhost`.
+
+A porta do Ollama vem de `PORT`. Se a variavel estiver vazia ou ausente, o padrao e `11434`.
+
+O modelo de embedding vem de `MODEL`. Se a variavel estiver vazia ou ausente, o padrao e `embeddinggemma`.
+
+Exemplo:
+
+```powershell
+$env:CHROMA_DIR="C:\Users\<usuario>\.codex\mcp\scopus\chroma"
+$env:CHROMA_COLLECTION="scopus"
+$env:HOST="http://localhost"
+$env:PORT="11434"
+$env:MODEL="embeddinggemma"
+python D:\mcp\server_scopus.py
+```
+
+### Ferramentas
+
+- `index_csv(csv_path, host="http://localhost", port=11434, model="embeddinggemma")`: indexa uma exportacao CSV do Scopus. Espera as colunas `Title`, `Abstract`, `Author Keywords`, `Authors`, `Year`, `Source title` e `DOI`.
+- `index_ris(ris_path, host="http://localhost", port=11434, model="embeddinggemma")`: indexa um arquivo RIS. Usa campos como titulo, resumo, palavras-chave, autores, ano, periodico/fonte e DOI.
+- `search(query, top_k=5, host="http://localhost", port=11434, model="embeddinggemma")`: busca no indice e retorna resultados com score, titulo, autores, ano, DOI, fonte e trecho.
+- `collection_stats()`: retorna o nome da collection e a quantidade de itens indexados.
+
+### Comportamento de indexacao
+
+Cada registro precisa ter titulo para ser indexado. O identificador base e o DOI quando disponivel; caso contrario, o servidor usa um identificador baseado na linha. Textos longos sao divididos automaticamente em chunks com sobreposicao, entao nao e necessario fatiar manualmente abstracts extensos antes de chamar `index_csv` ou `index_ris`.
+
 ## Observacoes
 
 - O diretorio `pdf-indexer-mcp/` esta ignorado no Git para evitar versionar um projeto maior e independente junto com estes servidores.
-- O `scopus-search` usa `ChromaDB` e `Ollama`.
+- O `scopus-search` usa `ChromaDB`, `Ollama` e `rispy`.

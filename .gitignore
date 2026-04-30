@@ -25,6 +25,14 @@ ENV/
 .ipynb_checkpoints/
 .DS_Store
 Thumbs.db
+node_modules/
+**/node_modules/
+outputs/
+chroma_data/
 
 # Projeto local grande e independente
 pdf-indexer-mcp/
+
+# Repositorios/projetos locais independentes
+mendeley-mcp/
+**/.git/

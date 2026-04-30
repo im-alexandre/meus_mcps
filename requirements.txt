@@ -3,3 +3,4 @@ ollama
 chromadb
 python-docx
 lxml
+rispy
