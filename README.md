@@ -114,7 +114,9 @@ Por padrao, o servidor chama o Ollama em `http://localhost:11434` e usa o modelo
 
 O indice e persistido no diretorio definido por `CHROMA_DIR`. Se a variavel nao estiver configurada, o padrao e `./chroma_data`.
 
-A collection usada no ChromaDB vem de `CHROMA_COLLECTION`. Se a variavel estiver vazia ou ausente, o padrao e `scopus`.
+Nao ha collection padrao. As ferramentas que indexam, pesquisam ou consultam estatisticas exigem o parametro `collection` explicitamente em cada chamada.
+
+Se um agente nao souber qual collection usar, ele deve chamar `list_collections`, informar ao usuario as collections disponiveis e pedir a escolha. Para indexacao, o usuario tambem pode informar uma nova collection, que sera criada na chamada de `index_csv` ou `index_ris`.
 
 O host do Ollama vem de `HOST`. Se a variavel estiver vazia ou ausente, o padrao e `http://localhost`.
 
@@ -126,7 +128,6 @@ Exemplo:
 
 ```powershell
 $env:CHROMA_DIR="C:\Users\<usuario>\.codex\mcp\scopus\chroma"
-$env:CHROMA_COLLECTION="scopus"
 $env:HOST="http://localhost"
 $env:PORT="11434"
 $env:MODEL="embeddinggemma"
@@ -135,10 +136,11 @@ python D:\mcp\server_scopus.py
 
 ### Ferramentas
 
-- `index_csv(csv_path, host="http://localhost", port=11434, model="embeddinggemma")`: indexa uma exportacao CSV do Scopus. Espera as colunas `Title`, `Abstract`, `Author Keywords`, `Authors`, `Year`, `Source title` e `DOI`.
-- `index_ris(ris_path, host="http://localhost", port=11434, model="embeddinggemma")`: indexa um arquivo RIS. Usa campos como titulo, resumo, palavras-chave, autores, ano, periodico/fonte e DOI.
-- `search(query, top_k=5, host="http://localhost", port=11434, model="embeddinggemma")`: busca no indice e retorna resultados com score, titulo, autores, ano, DOI, fonte e trecho.
-- `collection_stats()`: retorna o nome da collection e a quantidade de itens indexados.
+- `list_collections()`: lista as collections existentes.
+- `index_csv(csv_path, collection, host="http://localhost", port=11434, model="embeddinggemma")`: indexa uma exportacao CSV do Scopus na collection informada. Espera as colunas `Title`, `Abstract`, `Author Keywords`, `Authors`, `Year`, `Source title` e `DOI`.
+- `index_ris(ris_path, collection, host="http://localhost", port=11434, model="embeddinggemma")`: indexa um arquivo RIS na collection informada. Usa campos como titulo, resumo, palavras-chave, autores, ano, periodico/fonte e DOI.
+- `search(query, collection, top_k=5, host="http://localhost", port=11434, model="embeddinggemma")`: busca na collection informada e retorna resultados com score, titulo, autores, ano, DOI, fonte e trecho.
+- `collection_stats(collection)`: retorna o nome da collection e a quantidade de itens indexados.
 
 ### Comportamento de indexacao
 

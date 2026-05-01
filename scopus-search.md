@@ -5,12 +5,16 @@ Use para trabalho bibliografico em exportacoes Scopus.
 - `collection_stats`: validar cobertura e estado do indice.
 - `index_csv`: indexar nova exportacao.
 - `search`: busca semantica por tema, autor, metodo ou lacuna.
+- `list_collections`: listar collections disponiveis quando a collection ainda nao estiver clara.
 
 Fluxo preferencial:
 
-1. cheque `collection_stats`
-2. rode `index_csv` quando houver nova base — passe o CSV original completo, o servidor ja faz chunking interno
-3. use `search` para recuperar artigos relevantes
+1. se a collection nao estiver informada, rode `list_collections` e pergunte ao usuario qual collection usar; para indexacao, ofereca tambem a opcao de criar uma nova collection
+2. cheque `collection_stats(collection="...")`
+3. rode `index_csv(collection="...", csv_path="...")` quando houver nova base — passe o CSV original completo, o servidor ja faz chunking interno
+4. use `search(collection="...", query="...")` para recuperar artigos relevantes
+
+As ferramentas de indexacao e busca exigem `collection` explicitamente. Nao existe collection padrao nem variavel de ambiente para escolher collection automaticamente.
 
 ## index_csv — comportamento interno
 

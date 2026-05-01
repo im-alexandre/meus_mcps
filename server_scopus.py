@@ -14,25 +14,76 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("scopus-search")
 
 CHROMA_DIR = os.environ.get("CHROMA_DIR", "./chroma_data")
-COLLECTION_NAME = os.environ.get("CHROMA_COLLECTION", "").strip() or "scopus"
 DEFAULT_HOST = os.environ.get("HOST", "").strip() or "http://localhost"
 DEFAULT_PORT = int(os.environ.get("PORT", "").strip() or "11434")
 DEFAULT_MODEL = os.environ.get("MODEL", "").strip() or "embeddinggemma"
 
 _client: chromadb.ClientAPI | None = None
-_collection: chromadb.Collection | None = None
+_collections: dict[str, chromadb.Collection] = {}
 _ollama_clients: dict[str, ollama.Client] = {}
 
 
-def _get_collection() -> chromadb.Collection:
-    global _client, _collection
-    if _collection is None:
+def _get_client() -> chromadb.ClientAPI:
+    global _client
+    if _client is None:
         _client = chromadb.PersistentClient(path=CHROMA_DIR)
-        _collection = _client.get_or_create_collection(
-            name=COLLECTION_NAME,
+    return _client
+
+
+def _normalize_collection_name(collection: str, allow_new: bool = True) -> str:
+    name = collection.strip()
+    if not name:
+        raise ValueError(_missing_collection_message(allow_new=allow_new))
+    return name
+
+
+def _collection_item_name(collection: object) -> str:
+    return str(getattr(collection, "name", collection))
+
+
+def _list_collection_names() -> list[str]:
+    return sorted(_collection_item_name(item) for item in _get_client().list_collections())
+
+
+def _format_available_collections() -> str:
+    names = _list_collection_names()
+    if not names:
+        return "Nenhuma collection existente foi encontrada."
+    return "Collections disponiveis: " + ", ".join(names) + "."
+
+
+def _missing_collection_message(allow_new: bool = True) -> str:
+    message = (
+        "Informe explicitamente o parametro 'collection' na chamada da ferramenta. "
+        f"{_format_available_collections()}"
+    )
+    if allow_new:
+        message += " Para indexar, voce tambem pode informar uma nova collection."
+    return message
+
+
+def _get_or_create_collection(collection: str) -> chromadb.Collection:
+    name = _normalize_collection_name(collection)
+    cached = _collections.get(name)
+    if cached is None:
+        cached = _get_client().get_or_create_collection(
+            name=name,
             metadata={"hnsw:space": "cosine"},
         )
-    return _collection
+        _collections[name] = cached
+    return cached
+
+
+def _get_existing_collection(collection: str) -> chromadb.Collection | None:
+    name = _normalize_collection_name(collection, allow_new=False)
+    cached = _collections.get(name)
+    if cached is not None:
+        return cached
+    if name not in _list_collection_names():
+        return None
+    cached = _get_client().get_collection(name=name)
+    _collections[name] = cached
+    return cached
 
 
 MAX_EMBED_CHARS = 4000  # limite conservador para o modelo de embedding
@@ -121,11 +172,13 @@ def _normalize_record(
 def _index_records(
     records: list[dict[str, str]],
     source_path: str,
+    collection: str,
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     model: str = DEFAULT_MODEL,
 ) -> str:
-    col = _get_collection()
+    collection_name = _normalize_collection_name(collection)
+    col = _get_or_create_collection(collection_name)
     added = 0
     chunks_total = 0
     ids, docs, metas, embeddings = [], [], [], []
@@ -160,7 +213,10 @@ def _index_records(
         added += 1
 
     _flush()
-    msg = f"Indexados {added} registros ({chunks_total} chunks) de {source_path}"
+    msg = (
+        f"Indexados {added} registros ({chunks_total} chunks) de {source_path} "
+        f"na collection {collection_name}"
+    )
     if chunks_total > added:
         msg += f" — {chunks_total - added} chunks extras por abstracts longos"
     return msg
@@ -205,11 +261,17 @@ def _read_ris_records(path: Path) -> list[dict[str, str]]:
 @mcp.tool()
 def index_csv(
     csv_path: str,
+    collection: str,
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     model: str = DEFAULT_MODEL,
 ) -> str:
-    """Indexa um CSV Scopus no ChromaDB. Espera colunas: Title, Abstract, Author Keywords, Authors, Year, Source title, DOI."""
+    """Indexa um CSV Scopus na collection informada. Espera colunas: Title, Abstract, Author Keywords, Authors, Year, Source title, DOI."""
+    try:
+        collection_name = _normalize_collection_name(collection, allow_new=True)
+    except ValueError as exc:
+        return str(exc)
+
     path = Path(csv_path)
     if not path.exists():
         return f"Arquivo nao encontrado: {csv_path}"
@@ -231,41 +293,74 @@ def index_csv(
                 }
             )
 
-    return _index_records(records, csv_path, host=host, port=port, model=model)
+    return _index_records(
+        records, csv_path, collection=collection_name, host=host, port=port, model=model
+    )
 
 
 @mcp.tool()
 def index_ris(
     ris_path: str,
+    collection: str,
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     model: str = DEFAULT_MODEL,
 ) -> str:
     """
-    Indexa um arquivo RIS no ChromaDB.
+    Indexa um arquivo RIS na collection informada.
     Usa campos padrao como TI/T1, AB, KW, AU/A1, PY/Y1, JO/JF/T2
     e DO.
     """
+    try:
+        collection_name = _normalize_collection_name(collection, allow_new=True)
+    except ValueError as exc:
+        return str(exc)
+
     path = Path(ris_path)
     if not path.exists():
         return f"Arquivo nao encontrado: {ris_path}"
 
     records = _read_ris_records(path)
-    return _index_records(records, ris_path, host=host, port=port, model=model)
+    return _index_records(
+        records, ris_path, collection=collection_name, host=host, port=port, model=model
+    )
 
 
 @mcp.tool()
 def search(
     query: str,
+    collection: str,
     top_k: int = 5,
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     model: str = DEFAULT_MODEL,
 ) -> list[dict]:
-    """Busca semantica no indice Scopus. Retorna os top_k resultados mais relevantes."""
-    col = _get_collection()
+    """Busca semantica na collection informada. Retorna os top_k resultados mais relevantes."""
+    try:
+        collection_name = _normalize_collection_name(collection, allow_new=False)
+    except ValueError as exc:
+        return [{"error": str(exc)}]
+
+    col = _get_existing_collection(collection_name)
+    if col is None:
+        return [
+            {
+                "error": (
+                    f"Collection nao encontrada: {collection_name}. "
+                    f"{_format_available_collections()}"
+                )
+            }
+        ]
+
     if col.count() == 0:
-        return [{"error": "Indice vazio. Execute index_csv ou index_ris primeiro."}]
+        return [
+            {
+                "error": (
+                    f"Indice vazio na collection {collection_name}. "
+                    "Execute index_csv ou index_ris primeiro informando essa collection."
+                )
+            }
+        ]
 
     results = col.query(
         query_embeddings=[_embed(query, host=host, port=port, model=model)],
@@ -295,10 +390,28 @@ def search(
 
 
 @mcp.tool()
-def collection_stats() -> dict:
-    """Retorna estatisticas da collection Scopus."""
-    col = _get_collection()
-    return {"collection": COLLECTION_NAME, "count": col.count()}
+def list_collections() -> dict:
+    """Lista as collections disponiveis para indexacao ou busca."""
+    return {"collections": _list_collection_names()}
+
+
+@mcp.tool()
+def collection_stats(collection: str) -> dict:
+    """Retorna estatisticas da collection informada."""
+    try:
+        collection_name = _normalize_collection_name(collection, allow_new=False)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    col = _get_existing_collection(collection_name)
+    if col is None:
+        return {
+            "error": (
+                f"Collection nao encontrada: {collection_name}. "
+                f"{_format_available_collections()}"
+            )
+        }
+    return {"collection": collection_name, "count": col.count()}
 
 
 if __name__ == "__main__":
